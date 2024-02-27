@@ -1,0 +1,24 @@
+/*
+ * Device Tree overlay for Witty Pi 4 extension board by UUGear
+ *
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2835";
+
+	fragment@0 {
+		target = <&i2c1>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			rtc@8 {
+				compatible = "nxp,pcf85063wp";
+				reg = <0x08>;
+			};
+		};
+	};
+};

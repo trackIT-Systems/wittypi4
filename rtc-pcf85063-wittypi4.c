@@ -519,6 +519,7 @@ enum pcf85063_type {
 	PCF85063TP,
 	PCF85063A,
 	RV8263,
+	PCF85063A_WITTYPI,
 	PCF85063_LAST_ID
 };
 
@@ -544,6 +545,17 @@ static struct pcf85063_config pcf85063_cfg[] = {
 			.max_register = 0x11,
 		},
 		.has_alarms = 1,
+	},
+	[PCF85063A_WITTYPI] = {
+		.regmap = {
+			.reg_bits = 8,
+			.val_bits = 8,
+			.max_register = 0x11,
+			.reg_base = 0x36,
+			.use_single_read = true,
+			.use_single_write = true,
+		},
+		.has_alarms = 0,
 	},
 	[RV8263] = {
 		.regmap = {
@@ -654,6 +666,7 @@ static const struct i2c_device_id pcf85063_ids[] = {
 	{ "pcf85063", PCF85063 },
 	{ "pcf85063tp", PCF85063TP },
 	{ "pcf85063a", PCF85063A },
+	{ "pcf85063wp", PCF85063A_WITTYPI },
 	{ "rv8263", RV8263 },
 	{}
 };
@@ -665,6 +678,7 @@ static const struct of_device_id pcf85063_of_match[] = {
 	{ .compatible = "nxp,pcf85063", .data = &pcf85063_cfg[PCF85063] },
 	{ .compatible = "nxp,pcf85063tp", .data = &pcf85063_cfg[PCF85063TP] },
 	{ .compatible = "nxp,pcf85063a", .data = &pcf85063_cfg[PCF85063A] },
+	{ .compatible = "nxp,pcf85063wp", .data = &pcf85063_cfg[PCF85063A_WITTYPI] },
 	{ .compatible = "microcrystal,rv8263", .data = &pcf85063_cfg[RV8263] },
 	{}
 };
@@ -673,7 +687,7 @@ MODULE_DEVICE_TABLE(of, pcf85063_of_match);
 
 static struct i2c_driver pcf85063_driver = {
 	.driver		= {
-		.name	= "rtc-pcf85063",
+		.name	= "rtc-pcf85063-wittypi4",
 		.of_match_table = of_match_ptr(pcf85063_of_match),
 	},
 	.probe_new	= pcf85063_probe,
