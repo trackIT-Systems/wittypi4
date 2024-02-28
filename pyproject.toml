@@ -1,0 +1,14 @@
+[project]
+name = "wittypi4"
+version = "0.1"
+dependencies = [
+    "i2cdevice ~=1.0.0",
+    "smbus2 ~=0.4.3",
+    "gpiozero ~=2.0.1",
+]
+
+[tool.setuptools]
+py-modules = ["wittypi4"]
+
+[project.scripts]
+wittypid = "wittypi4.wittypid:main"
