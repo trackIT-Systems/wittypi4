@@ -1,8 +1,10 @@
 import enum
 import datetime
+import logging
 
 import smbus2
-import gpiozero
+
+logger = logging.getLogger("wittypi4")
 
 # Device Adress
 I2C_MC_ADDRESS = 0x08
@@ -93,6 +95,9 @@ SYSUP_PIN = 17  # output SYS_UP signal on GPIO-17 (BCM naming)
 CHRG_PIN = 5    # input to detect charging status
 STDBY_PIN = 6   # input to detect standby status
 
+# Values
+ALARM_RESET = 80
+
 
 def bcd2bin(value):
     return value - 6 * (value >> 4)
@@ -127,30 +132,32 @@ class WittyPi4(object):
         addr: int = I2C_MC_ADDRESS,
         tz=datetime.UTC,
     ):
-        self.bus = bus
-        self.addr = addr
-        self.tz = tz
+        self._bus = bus
+        self._addr = addr
+        self._tz = tz
 
         firmware_id = self.firmware_id
         if firmware_id != 0x26:
             raise WittyPiException("Unknown Firmware Id (got 0x%x, expected 0x26)" % firmware_id)
 
+        logger.debug("WittyPi 4 probed successfully")
+
     # Read registers
     @property
     def firmware_id(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_ID)
+        return self._bus.read_byte_data(self._addr, I2C_ID)
 
     @property
     def voltage_in(self) -> float:
-        return self.bus.read_byte_data(self.addr, I2C_VOLTAGE_IN_I) + (self.bus.read_byte_data(self.addr, I2C_VOLTAGE_IN_D) / 100)
+        return self._bus.read_byte_data(self._addr, I2C_VOLTAGE_IN_I) + (self._bus.read_byte_data(self._addr, I2C_VOLTAGE_IN_D) / 100)
 
     @property
     def voltage_out(self) -> float:
-        return self.bus.read_byte_data(self.addr, I2C_VOLTAGE_OUT_I) + (self.bus.read_byte_data(self.addr, I2C_VOLTAGE_OUT_D) / 100)
+        return self._bus.read_byte_data(self._addr, I2C_VOLTAGE_OUT_I) + (self._bus.read_byte_data(self._addr, I2C_VOLTAGE_OUT_D) / 100)
 
     @property
     def current_out(self) -> float:
-        return self.bus.read_byte_data(self.addr, I2C_CURRENT_OUT_I) + (self.bus.read_byte_data(self.addr, I2C_CURRENT_OUT_D) / 100)
+        return self._bus.read_byte_data(self._addr, I2C_CURRENT_OUT_I) + (self._bus.read_byte_data(self._addr, I2C_CURRENT_OUT_D) / 100)
 
     @property
     def watts_out(self) -> float:
@@ -158,88 +165,88 @@ class WittyPi4(object):
 
     @property
     def power_ldo(self) -> bool:
-        return bool(self.bus.read_byte_data(self.addr, I2C_POWER_MODE))
+        return bool(self._bus.read_byte_data(self._addr, I2C_POWER_MODE))
 
     @property
     def lv_shutdown(self) -> bool:
-        return bool(self.bus.read_byte_data(self.addr, I2C_LV_SHUTDOWN))
+        return bool(self._bus.read_byte_data(self._addr, I2C_LV_SHUTDOWN))
 
     @property
     def alarm1_triggered(self) -> bool:
-        return bool(self.bus.read_byte_data(self.addr, I2C_ALARM1_TRIGGERED))
+        return bool(self._bus.read_byte_data(self._addr, I2C_ALARM1_TRIGGERED))
 
     @property
     def alarm2_triggered(self) -> bool:
-        return bool(self.bus.read_byte_data(self.addr, I2C_ALARM2_TRIGGERED))
+        return bool(self._bus.read_byte_data(self._addr, I2C_ALARM2_TRIGGERED))
 
     @property
     def action_reason(self) -> ActionReason:
-        return ActionReason(self.bus.read_byte_data(self.addr, I2C_ACTION_REASON))
+        return ActionReason(self._bus.read_byte_data(self._addr, I2C_ACTION_REASON))
 
     @property
     def firmware_revision(self):
-        return self.bus.read_byte_data(self.addr, I2C_FW_REVISION)
+        return self._bus.read_byte_data(self._addr, I2C_FW_REVISION)
 
     # Configuration Registers
     @property
     def default_on(self) -> bool:
-        return bool(self.bus.read_byte_data(self.addr, I2C_CONF_DEFAULT_ON))
+        return bool(self._bus.read_byte_data(self._addr, I2C_CONF_DEFAULT_ON))
 
     @default_on.setter
     def default_on(self, value: bool):
-        self.bus.write_byte_data(self.addr, I2C_CONF_DEFAULT_ON, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_DEFAULT_ON, value)
 
     @property
     def pulse_interval(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_PULSE_INTERVAL)
+        return self._bus.read_byte_data(self._addr, I2C_CONF_PULSE_INTERVAL)
 
     @pulse_interval.setter
     def pulse_interval(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_PULSE_INTERVAL, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_PULSE_INTERVAL, value)
 
     @property
     def lv_threshold(self) -> float:
-        thres = self.bus.read_byte_data(self.addr, I2C_CONF_LOW_VOLTAGE)
+        thres = self._bus.read_byte_data(self._addr, I2C_CONF_LOW_VOLTAGE)
         return 0.0 if (thres == 255) else (thres / 10)
 
     @lv_threshold.setter
     def lv_threshold(self, value: float):
         write_value = 255 if (value == 0.0) else int(value * 10)
-        self.bus.write_byte_data(self.addr, I2C_CONF_LOW_VOLTAGE, write_value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_LOW_VOLTAGE, write_value)
 
     @property
     def blink_led(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_BLINK_LED)
+        return self._bus.read_byte_data(self._addr, I2C_CONF_BLINK_LED)
 
     @blink_led.setter
     def blink_led(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_BLINK_LED, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_BLINK_LED, value)
 
     @property
     def power_cut_delay(self) -> float:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_POWER_CUT_DELAY) / 10
+        return self._bus.read_byte_data(self._addr, I2C_CONF_POWER_CUT_DELAY) / 10
 
     @power_cut_delay.setter
     def power_cut_delay(self, value: float):
-        self.bus.write_byte_data(self.addr, I2C_CONF_BLINK_LED, int(value * 10))
+        self._bus.write_byte_data(self._addr, I2C_CONF_BLINK_LED, int(value * 10))
 
     @property
     def recovery_voltage(self) -> float:
-        thres = self.bus.read_byte_data(self.addr, I2C_CONF_RECOVERY_VOLTAGE)
+        thres = self._bus.read_byte_data(self._addr, I2C_CONF_RECOVERY_VOLTAGE)
         return 0.0 if (thres == 255) else (thres / 10)
 
     @recovery_voltage.setter
     def recovery_voltage(self, value: float):
         write_value = 255 if (value == 0.0) else int(value * 10)
-        self.bus.write_byte_data(self.addr, I2C_CONF_RECOVERY_VOLTAGE, write_value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_RECOVERY_VOLTAGE, write_value)
 
     @property
     def dummy_load(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_DUMMY_LOAD)
+        return self._bus.read_byte_data(self._addr, I2C_CONF_DUMMY_LOAD)
 
     @dummy_load.setter
     def dummy_load(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_DUMMY_LOAD, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_DUMMY_LOAD, value)
 
     @staticmethod
     def _from_adj(value: int) -> float:
@@ -258,216 +265,251 @@ class WittyPi4(object):
 
     @property
     def adj_vin(self) -> float:
-        return self._from_adj(self.bus.read_byte_data(self.addr, I2C_CONF_ADJ_VIN))
+        return self._from_adj(self._bus.read_byte_data(self._addr, I2C_CONF_ADJ_VIN))
 
     @adj_vin.setter
     def adj_vin(self, value: float):
         write_value = self._to_adj(value)
-        self.bus.write_byte_data(self.addr, I2C_CONF_ADJ_VIN, write_value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_ADJ_VIN, write_value)
 
     @property
     def adj_vout(self) -> float:
-        return self._from_adj(self.bus.read_byte_data(self.addr, I2C_CONF_ADJ_VOUT))
+        return self._from_adj(self._bus.read_byte_data(self._addr, I2C_CONF_ADJ_VOUT))
 
     @adj_vout.setter
     def adj_vout(self, value: float):
         write_value = self._to_adj(value)
-        self.bus.write_byte_data(self.addr, I2C_CONF_ADJ_VOUT, write_value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_ADJ_VOUT, write_value)
 
     @property
     def adj_iout(self) -> float:
-        return self._from_adj(self.bus.read_byte_data(self.addr, I2C_CONF_ADJ_IOUT))
+        return self._from_adj(self._bus.read_byte_data(self._addr, I2C_CONF_ADJ_IOUT))
 
     @adj_iout.setter
     def adj_iout(self, value: float):
         write_value = self._to_adj(value)
-        self.bus.write_byte_data(self.addr, I2C_CONF_ADJ_IOUT, write_value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_ADJ_IOUT, write_value)
 
     # Startup Alarm
     @property
     def alarm1_second(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_SECOND_ALARM1)
+        return bcd2bin(self._bus.read_byte_data(self._addr, I2C_CONF_SECOND_ALARM1))
 
     @alarm1_second.setter
     def alarm1_second(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_SECOND_ALARM1, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_SECOND_ALARM1, bin2bcd(value))
 
     @property
     def alarm1_minute(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_MINUTE_ALARM1)
+        return bcd2bin(self._bus.read_byte_data(self._addr, I2C_CONF_MINUTE_ALARM1))
 
     @alarm1_minute.setter
     def alarm1_minute(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_MINUTE_ALARM1, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_MINUTE_ALARM1, bin2bcd(value))
 
     @property
     def alarm1_hour(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_HOUR_ALARM1)
+        return bcd2bin(self._bus.read_byte_data(self._addr, I2C_CONF_HOUR_ALARM1))
 
     @alarm1_hour.setter
     def alarm1_hour(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_HOUR_ALARM1, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_HOUR_ALARM1, bin2bcd(value))
 
     @property
     def alarm1_day(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_DAY_ALARM1)
+        return bcd2bin(self._bus.read_byte_data(self._addr, I2C_CONF_DAY_ALARM1))
 
     @alarm1_day.setter
     def alarm1_day(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_DAY_ALARM1, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_DAY_ALARM1, bin2bcd(value))
 
     @property
     def alarm1_weekday(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_WEEKDAY_ALARM1)
+        return bcd2bin(self._bus.read_byte_data(self._addr, I2C_CONF_WEEKDAY_ALARM1))
 
     @alarm1_weekday.setter
     def alarm1_weekday(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_WEEKDAY_ALARM1, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_WEEKDAY_ALARM1, bin2bcd(value))
 
-    def set_startup_time(self, day: int, time: datetime.time):
-        self.alarm1_day = day
-        ts = time.astimezone(self.tz)
+    @property
+    def alarm2_second(self) -> int:
+        return bcd2bin(self._bus.read_byte_data(self._addr, I2C_CONF_SECOND_ALARM2))
+
+    @alarm2_second.setter
+    def alarm2_second(self, value: int):
+        self._bus.write_byte_data(self._addr, I2C_CONF_SECOND_ALARM2, bin2bcd(value))
+
+    @property
+    def alarm2_minute(self) -> int:
+        return bcd2bin(self._bus.read_byte_data(self._addr, I2C_CONF_MINUTE_ALARM2))
+
+    @alarm2_minute.setter
+    def alarm2_minute(self, value: int):
+        self._bus.write_byte_data(self._addr, I2C_CONF_MINUTE_ALARM2, bin2bcd(value))
+
+    @property
+    def alarm2_hour(self) -> int:
+        return bcd2bin(self._bus.read_byte_data(self._addr, I2C_CONF_HOUR_ALARM2))
+
+    @alarm2_hour.setter
+    def alarm2_hour(self, value: int):
+        self._bus.write_byte_data(self._addr, I2C_CONF_HOUR_ALARM2, bin2bcd(value))
+
+    @property
+    def alarm2_day(self) -> int:
+        return bcd2bin(self._bus.read_byte_data(self._addr, I2C_CONF_DAY_ALARM2))
+
+    @alarm2_day.setter
+    def alarm2_day(self, value: int):
+        self._bus.write_byte_data(self._addr, I2C_CONF_DAY_ALARM2, bin2bcd(value))
+
+    @property
+    def alarm2_weekday(self) -> int:
+        return bcd2bin(self._bus.read_byte_data(self._addr, I2C_CONF_WEEKDAY_ALARM2))
+
+    @alarm2_weekday.setter
+    def alarm2_weekday(self, value: int):
+        self._bus.write_byte_data(self._addr, I2C_CONF_WEEKDAY_ALARM2, bin2bcd(value))
+
+    # High level interface for alarms
+    def _timer_next_ts(self, day: int, weekday: int, hour: int, minute: int, second: int) -> None | datetime.datetime:
+        ts = self.rtc_datetime
+
+        # if all register are unset, return None
+        if (day == ALARM_RESET) and (weekday == ALARM_RESET) and (hour == ALARM_RESET) and (minute == ALARM_RESET) and (second == ALARM_RESET):
+            return None
+        if (day == 0):
+            return None
+
+        logger.debug("Iterating %s to match %02i (%02i) %02i:%02i:%02i", ts, day, weekday, hour, minute, second)
+
+        # get current date and iterate until day matches
+        while (second != ts.second) and (second != ALARM_RESET):
+            ts += datetime.timedelta(seconds=1)
+        while (minute != ts.minute) and (minute != ALARM_RESET):
+            ts += datetime.timedelta(minutes=1)
+        while (hour != ts.hour) and (hour != ALARM_RESET):
+            ts += datetime.timedelta(hours=1)
+        while (weekday != ts.weekday()) and (weekday != ALARM_RESET):
+            ts += datetime.timedelta(days=1)
+        while (day != ts.day) and (day != ALARM_RESET):
+            ts += datetime.timedelta(days=1)
+
+        return ts
+
+    def set_startup_datetime(self, ts: datetime.datetime | None):
+        if ts is None:
+            self.alarm1_day = ALARM_RESET
+            self.alarm1_weekday = ALARM_RESET
+            self.alarm1_hour = ALARM_RESET
+            self.alarm1_minute = ALARM_RESET
+            self.alarm1_second = ALARM_RESET
+
+        ts = ts.astimezone(self._tz)
+        if ts < self.rtc_datetime:
+            logger.warning("startup time is in the past.")
+
+        self.alarm1_day = ts.day
+        self.alarm1_weekday = ALARM_RESET
         self.alarm1_hour = ts.hour
         self.alarm1_minute = ts.minute
         self.alarm1_second = ts.second
 
-    def get_startup_time(self) -> tuple[int, datetime.time]:
-        ts = datetime.time(
+    def get_startup_datetime(self) -> datetime.datetime | None:
+        return self._timer_next_ts(
+            day=self.alarm1_day,
+            weekday=self.alarm1_weekday,
             hour=self.alarm1_hour,
             minute=self.alarm1_minute,
             second=self.alarm1_second,
-            tzinfo=self.tz,
         )
-        return (self.alarm1_day, ts)
 
-    def clear_startup_time(self):
-        self.alarm1_day = 0
-        self.alarm1_hour = 0
-        self.alarm1_minute = 0
-        self.alarm1_second = 0
+    def set_shutdown_datetime(self, ts: datetime.datetime | None):
+        if ts is None:
+            self.alarm2_day = ALARM_RESET
+            self.alarm2_weekday = ALARM_RESET
+            self.alarm2_hour = ALARM_RESET
+            self.alarm2_minute = ALARM_RESET
+            self.alarm2_second = ALARM_RESET
 
-    # Shutdown Alarm
-    @property
-    def alarm2_second(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_SECOND_ALARM2)
+        ts = ts.astimezone(self._tz)
+        if ts < self.rtc_datetime:
+            logger.warning("startup time is in the past.")
 
-    @alarm2_second.setter
-    def alarm2_second(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_SECOND_ALARM2, value)
-
-    @property
-    def alarm2_minute(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_MINUTE_ALARM2)
-
-    @alarm2_minute.setter
-    def alarm2_minute(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_MINUTE_ALARM2, value)
-
-    @property
-    def alarm2_hour(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_HOUR_ALARM2)
-
-    @alarm2_hour.setter
-    def alarm2_hour(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_HOUR_ALARM2, value)
-
-    @property
-    def alarm2_day(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_DAY_ALARM2)
-
-    @alarm2_day.setter
-    def alarm2_day(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_DAY_ALARM2, value)
-
-    @property
-    def alarm2_weekday(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_WEEKDAY_ALARM2)
-
-    @alarm2_weekday.setter
-    def alarm2_weekday(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_WEEKDAY_ALARM2, value)
-
-    def set_shutdown_time(self, day: int, time: datetime.time):
-        self.alarm2_day = day
-        ts = time.astimezone(self.tz)
+        self.alarm2_day = ts.day
+        self.alarm2_weekday = ALARM_RESET       # ignore weekday in this mode
         self.alarm2_hour = ts.hour
         self.alarm2_minute = ts.minute
         self.alarm2_second = ts.second
 
-    def get_shutdown_time(self) -> tuple[int, datetime.time]:
-        ts = datetime.time(
+    def get_shutdown_datetime(self) -> datetime.datetime | None:
+        return self._timer_next_ts(
+            day=self.alarm2_day,
+            weekday=self.alarm2_weekday,
             hour=self.alarm2_hour,
             minute=self.alarm2_minute,
             second=self.alarm2_second,
-            tzinfo=self.tz,
         )
-        return (self.alarm2_day, ts)
-
-    def clear_shutdown_time(self):
-        self.alarm2_day = 0
-        self.alarm2_hour = 0
-        self.alarm2_minute = 0
-        self.alarm2_second = 0
 
     @property
     def rtc_offset(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_RTC_OFFSET)
+        return self._bus.read_byte_data(self._addr, I2C_CONF_RTC_OFFSET)
 
     @rtc_offset.setter
     def rtc_offset(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_RTC_OFFSET, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_RTC_OFFSET, value)
 
     @property
     def rtc_tc(self) -> bool:
-        return bool(self.bus.read_byte_data(self.addr, I2C_CONF_RTC_ENABLE_TC))
+        return bool(self._bus.read_byte_data(self._addr, I2C_CONF_RTC_ENABLE_TC))
 
     @rtc_tc.setter
     def rtc_tc(self, value: bool):
-        self.bus.write_byte_data(self.addr, I2C_CONF_RTC_ENABLE_TC, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_RTC_ENABLE_TC, value)
 
     @property
     def alarm1_flag(self) -> bool:
-        return bool(self.bus.read_byte_data(self.addr, I2C_CONF_FLAG_ALARM1))
+        return bool(self._bus.read_byte_data(self._addr, I2C_CONF_FLAG_ALARM1))
 
     @alarm1_flag.setter
     def alarm1_flag(self, value: bool):
-        self.bus.write_byte_data(self.addr, I2C_CONF_FLAG_ALARM1, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_FLAG_ALARM1, value)
 
     @property
     def alarm2_flag(self) -> bool:
-        return bool(self.bus.read_byte_data(self.addr, I2C_CONF_FLAG_ALARM2))
+        return bool(self._bus.read_byte_data(self._addr, I2C_CONF_FLAG_ALARM2))
 
     @alarm2_flag.setter
     def alarm2_flag(self, value: bool):
-        self.bus.write_byte_data(self.addr, I2C_CONF_FLAG_ALARM2, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_FLAG_ALARM2, value)
 
     @property
     def ignore_power_mode(self) -> bool:
-        return bool(self.bus.read_byte_data(self.addr, I2C_CONF_IGNORE_POWER_MODE))
+        return bool(self._bus.read_byte_data(self._addr, I2C_CONF_IGNORE_POWER_MODE))
 
     @ignore_power_mode.setter
     def ignore_power_mode(self, value: bool):
-        self.bus.write_byte_data(self.addr, I2C_CONF_IGNORE_POWER_MODE, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_IGNORE_POWER_MODE, value)
 
     @property
     def ignore_lv_shutdown(self) -> bool:
-        return bool(self.bus.read_byte_data(self.addr, I2C_CONF_IGNORE_LV_SHUTDOWN))
+        return bool(self._bus.read_byte_data(self._addr, I2C_CONF_IGNORE_LV_SHUTDOWN))
 
     @ignore_lv_shutdown.setter
     def ignore_lv_shutdown(self, value: bool):
-        self.bus.write_byte_data(self.addr, I2C_CONF_IGNORE_LV_SHUTDOWN, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_IGNORE_LV_SHUTDOWN, value)
 
     @property
     def below_temperature_action(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_BELOW_TEMP_ACTION)
+        return self._bus.read_byte_data(self._addr, I2C_CONF_BELOW_TEMP_ACTION)
 
     @below_temperature_action.setter
     def below_temperature_action(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_BELOW_TEMP_ACTION, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_BELOW_TEMP_ACTION, value)
 
     @property
     def below_temperature_threshold(self) -> int:
-        value = self.bus.read_byte_data(self.addr, I2C_CONF_BELOW_TEMP_POINT)
+        value = self._bus.read_byte_data(self._addr, I2C_CONF_BELOW_TEMP_POINT)
         if value > 80:
             return value - 256
         else:
@@ -477,19 +519,19 @@ class WittyPi4(object):
     def below_temperature_threshold(self, value: int):
         if value < 0:
             value += 256
-        self.bus.write_byte_data(self.addr, I2C_CONF_BELOW_TEMP_POINT, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_BELOW_TEMP_POINT, value)
 
     @property
     def over_temperature_action(self) -> int:
-        return self.bus.read_byte_data(self.addr, I2C_CONF_OVER_TEMP_ACTION)
+        return self._bus.read_byte_data(self._addr, I2C_CONF_OVER_TEMP_ACTION)
 
     @over_temperature_action.setter
     def over_temperature_action(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_OVER_TEMP_ACTION, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_OVER_TEMP_ACTION, value)
 
     @property
     def over_temperature_threshold(self) -> int:
-        value = self.bus.read_byte_data(self.addr, I2C_CONF_OVER_TEMP_POINT)
+        value = self._bus.read_byte_data(self._addr, I2C_CONF_OVER_TEMP_POINT)
         if value > 80:
             return value - 256
         else:
@@ -499,15 +541,15 @@ class WittyPi4(object):
     def over_temperature_threshold(self, value: int):
         if value < 0:
             value += 256
-        self.bus.write_byte_data(self.addr, I2C_CONF_OVER_TEMP_POINT, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_OVER_TEMP_POINT, value)
 
     @property
     def default_on_delay(self):
-        return self.bus.read_byte_data(self.addr, I2C_CONF_DEFAULT_ON_DELAY)
+        return self._bus.read_byte_data(self._addr, I2C_CONF_DEFAULT_ON_DELAY)
 
     @default_on_delay.setter
     def default_on_delay(self, value: int):
-        self.bus.write_byte_data(self.addr, I2C_CONF_DEFAULT_ON_DELAY, value)
+        self._bus.write_byte_data(self._addr, I2C_CONF_DEFAULT_ON_DELAY, value)
 
     # LM75B Temperature Sensor
     # TODO: implement
@@ -516,25 +558,40 @@ class WittyPi4(object):
     @property
     def rtc_datetime(self) -> datetime.datetime:
         return datetime.datetime(
-            year=2000 + bcd2bin(self.bus.read_byte_data(self.addr, I2C_RTC_YEARS)),
-            month=bcd2bin(self.bus.read_byte_data(self.addr, I2C_RTC_MONTHS)),
-            day=bcd2bin(self.bus.read_byte_data(self.addr, I2C_RTC_DAYS)),
-            hour=bcd2bin(self.bus.read_byte_data(self.addr, I2C_RTC_HOURS)),
-            minute=bcd2bin(self.bus.read_byte_data(self.addr, I2C_RTC_MINUTES)),
-            second=bcd2bin(self.bus.read_byte_data(self.addr, I2C_RTC_SECONDS)),
-            tzinfo=self.tz,
+            year=2000 + bcd2bin(self._bus.read_byte_data(self._addr, I2C_RTC_YEARS)),
+            month=bcd2bin(self._bus.read_byte_data(self._addr, I2C_RTC_MONTHS)),
+            day=bcd2bin(self._bus.read_byte_data(self._addr, I2C_RTC_DAYS)),
+            hour=bcd2bin(self._bus.read_byte_data(self._addr, I2C_RTC_HOURS)),
+            minute=bcd2bin(self._bus.read_byte_data(self._addr, I2C_RTC_MINUTES)),
+            second=bcd2bin(self._bus.read_byte_data(self._addr, I2C_RTC_SECONDS)),
+            tzinfo=self._tz,
         )
 
     @rtc_datetime.setter
     def rtc_datetime(self, value: datetime.datetime):
-        ts = value.astimezone(self.tz)
-        self.bus.write_byte_data(self.addr, I2C_RTC_YEARS, bin2bcd(ts.year-2000))
-        self.bus.write_byte_data(self.addr, I2C_RTC_MONTHS, bin2bcd(ts.month))
-        self.bus.write_byte_data(self.addr, I2C_RTC_WEEKDAYS, bin2bcd(ts.weekday()))
-        self.bus.write_byte_data(self.addr, I2C_RTC_DAYS, bin2bcd(ts.day))
-        self.bus.write_byte_data(self.addr, I2C_RTC_HOURS, bin2bcd(ts.hour))
-        self.bus.write_byte_data(self.addr, I2C_RTC_MINUTES, bin2bcd(ts.minute))
-        self.bus.write_byte_data(self.addr, I2C_RTC_SECONDS, bin2bcd(ts.second))
+        ts = value.astimezone(self._tz)
+        self._bus.write_byte_data(self._addr, I2C_RTC_YEARS, bin2bcd(ts.year-2000))
+        self._bus.write_byte_data(self._addr, I2C_RTC_MONTHS, bin2bcd(ts.month))
+        self._bus.write_byte_data(self._addr, I2C_RTC_WEEKDAYS, bin2bcd(ts.weekday()))
+        self._bus.write_byte_data(self._addr, I2C_RTC_DAYS, bin2bcd(ts.day))
+        self._bus.write_byte_data(self._addr, I2C_RTC_HOURS, bin2bcd(ts.hour))
+        self._bus.write_byte_data(self._addr, I2C_RTC_MINUTES, bin2bcd(ts.minute))
+        self._bus.write_byte_data(self._addr, I2C_RTC_SECONDS, bin2bcd(ts.second))
+
+    @property
+    def rtc_ctrl1(self) -> int:
+        return self._bus.read_byte_data(self._addr, I2C_RTC_CTRL1)
+
+    @property
+    def rtc_ctrl2(self) -> int:
+        return self._bus.read_byte_data(self._addr, I2C_RTC_CTRL2)
 
     def rtc_valid(self, threshold=datetime.timedelta(seconds=60)) -> bool:
-        return abs(self.rtc_datetime - datetime.datetime.now(tz=self.tz)) < threshold
+        return abs(self.rtc_datetime - datetime.datetime.now(tz=self._tz)) < threshold
+
+    def dump_config(self) -> dict:
+        return {
+            prop: getattr(self, prop)
+            for prop in dir(self)
+            if not (prop.startswith("_") or callable(getattr(self, prop)))
+        }

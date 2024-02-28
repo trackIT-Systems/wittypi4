@@ -19,19 +19,16 @@ Info:   Initiates a shutdown when GPIO pin changes. The given GPIO pin
 Name:   gpio-led
 Info:   This is a generic overlay for activating LEDs (or any other component)
         by a GPIO pin.
-Params: gpio                    GPIO pin connected to the LED (default 19)
-        trigger                 Set the led-trigger to connect to this LED.
-                                default 'none' (LED is user-controlled).
 ```
 
-Using the following entries in `/boot/firmware/config.txt`, boot and shutdown is available:
+WittyPi uses inverted logic for the shutdown button, i.e. `active_high`. Also the virtual button press is quite short (can be < 1ms), hence debouncing shoud be disabled. Using the following entries in `/boot/firmware/config.txt`, sysup and shutdown is made available:
 
 ```ini
-dtoverlay=gpio-shutdown,gpio_pin=4
+dtoverlay=gpio-shutdown,gpio_pin=4,debounce=0,active_low=0
 dtoverlay=gpio-led,gpio=17,label=sysup,trigger=heartbeat
 ```
 
-> Note: The SYSUP signal (0,1,0,1) in 100ms intervals is sent using the trigger `hartbeat`, as this by accident matches the required interval. 
+> Note: The SYSUP signal `(0, 1, 0, 1)` in 100ms intervals is sent using the trigger `heartbeat`, as this by accident matches the required interval. 
 
 ## Real Time Clock (RTC) Linux Driver
 
