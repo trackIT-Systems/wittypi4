@@ -555,7 +555,7 @@ static struct pcf85063_config pcf85063_cfg[] = {
 			.use_single_read = true,
 			.use_single_write = true,
 		},
-		.has_alarms = 0,
+		.has_alarms = 1,
 	},
 	[RV8263] = {
 		.regmap = {

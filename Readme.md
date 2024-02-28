@@ -3,6 +3,36 @@ WittyPi 4
 
 This repository holds implementations for alternative WittyPi 4 usage with modern linux distributions.
 
+# Basic usage
+
+The basic workflow followed by the WittyPi is described in the figure cited from UUGear's manual:
+
+![WittyPi basic workflow, as seen in UUGear's user manual, Chapter 4.](img/wittypi_workflow.jpg)
+
+To enable turning the Raspberry Pi on and shutting it down gracefully, one can make use of existing dtoverlays, described in `/boot/firmware/overlays/README`:
+
+```
+Name:   gpio-shutdown
+Info:   Initiates a shutdown when GPIO pin changes. The given GPIO pin
+        is configured as an input key that generates KEY_POWER events.
+...
+Name:   gpio-led
+Info:   This is a generic overlay for activating LEDs (or any other component)
+        by a GPIO pin.
+Params: gpio                    GPIO pin connected to the LED (default 19)
+        trigger                 Set the led-trigger to connect to this LED.
+                                default 'none' (LED is user-controlled).
+```
+
+Using the following entries in `/boot/firmware/config.txt`, boot and shutdown is available:
+
+```ini
+dtoverlay=gpio-shutdown,gpio_pin=4
+dtoverlay=gpio-led,gpio=17,label=sysup,trigger=heartbeat
+```
+
+> Note: The SYSUP signal (0,1,0,1) in 100ms intervals is sent using the trigger `hartbeat`, as this by accident matches the required interval. 
+
 ## Real Time Clock (RTC) Linux Driver
 
 In order to use the real time clock in linux, a kernel module shall be loaded. While there exists an implementation of PCF85063A in the mainline kernel, it doesn't allow to be loaded with shifted register adresses. The linux `regmap` hardware abstraction allows however allows this modifications in a convenient fashion using the [`reg_base`](https://elixir.bootlin.com/linux/latest/source/include/linux/regmap.h#L260) property; *Value to be added to every register address before performing any operation.*
@@ -65,3 +95,4 @@ sudo tee -a /boot/firmware/config.txt <<<dtoverlay=wittypi4
 ### Datasheets
 - [WittyPi 4](https://www.uugear.com/doc/WittyPi4_UserManual.pdf)
 - [PCF85063A](https://www.nxp.com/docs/en/data-sheet/PCF85063A.pdf) (RTC)
+- [LM75B](https://www.ti.com/lit/ds/symlink/lm75b.pdf)
