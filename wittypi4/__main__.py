@@ -38,26 +38,23 @@ if __name__ == "__main__":
             logger.debug("%s: %s", prop, val)
 
     # print status information
-    logger.info("System Time:  %s", datetime.datetime.now())
     logger.info("WittyPi Time: %s", wp.rtc_datetime)
     logger.info("Startup Reason: %s", wp.action_reason)
-    logger.info("Power Usage: %.2f V -> %.2f V, %.2f A (%.2f W)", wp.voltage_in, wp.voltage_out, wp.current_out, wp.watts_out)
+    logger.info("RTC Control 1: %s", format(wp.rtc_ctrl1, '08b'))
+    logger.info("RTC Control 2: %s", format(wp.rtc_ctrl2, '08b'))
 
-    wp.alarm1_flag = False
-    wp.alarm2_flag = False
+    wp.clear_flags()
 
-    shutdown = wp.rtc_datetime + datetime.timedelta(seconds=5)
-    startup = wp.rtc_datetime + datetime.timedelta(seconds=25)
-    logger.info("Scheduling shutdown @%s", shutdown)
-    wp.set_shutdown_datetime(shutdown)
+    # schedule next startup
+    startup = wp.rtc_datetime + datetime.timedelta(seconds=20)
     logger.info("Scheduling startup @%s", startup)
     wp.set_startup_datetime(startup)
 
+    # schedule next shutdown
+    shutdown = wp.rtc_datetime + datetime.timedelta(seconds=5)
+    logger.info("Scheduling shutdown @%s", shutdown)
+    wp.set_shutdown_datetime(shutdown)
+
+    # debug print info
     logger.info("Next Startup: %s", wp.get_startup_datetime())
     logger.info("Next Shutdown: %s", wp.get_shutdown_datetime())
-
-    logger.info("RTC Control 1: %s", format(wp.rtc_ctrl1, '08b'))
-    logger.info("RTC Control 2: %s", format(wp.rtc_ctrl2, '08b'))
-    logger.info("Flag Alarm 1: %s", wp.alarm1_flag)
-    logger.info("Flag Alarm 2: %s", wp.alarm2_flag)
-    # logger.info("RTC Control 2: %b", wp.rtc_ctrl2)

@@ -586,6 +586,16 @@ class WittyPi4(object):
     def rtc_ctrl2(self) -> int:
         return self._bus.read_byte_data(self._addr, I2C_RTC_CTRL2)
 
+    def rtc_ctrl2_clear_alarm(self):
+        ctrl2_value = self._bus.read_byte_data(self._addr, I2C_RTC_CTRL2)
+        ctrl2_value &= 0b10111111
+        self._bus.write_byte_data(self._addr, I2C_RTC_CTRL2, ctrl2_value)
+
+    def clear_flags(self):
+        self.rtc_ctrl2_clear_alarm()
+        self.alarm1_flag = False
+        self.alarm2_flag = False
+
     def rtc_valid(self, threshold=datetime.timedelta(seconds=60)) -> bool:
         return abs(self.rtc_datetime - datetime.datetime.now(tz=self._tz)) < threshold
 
