@@ -139,7 +139,6 @@ class ScheduleEntry():
             stop: str,
             location: astral.LocationInfo,
             tz: datetime.tzinfo = datetime.UTC,
-            minutes_per_hour: int = 60,
             **kwargs,
     ):
         self.name = name
@@ -147,7 +146,6 @@ class ScheduleEntry():
         self._stop = stop
         self._tz = tz
         self._location = location
-        self.minutes_per_hour = minutes_per_hour
 
         if kwargs:
             logger.warning("Got unknown keywords %s, ignoring.", kwargs.keys())
@@ -213,7 +211,7 @@ class ScheduleEntry():
                 return ts
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(name={self.name!r}, start={self._start!r}, stop={self._stop!r}, minutes_per_hour={self.minutes_per_hour})"
+        return f"{self.__class__.__name__}(name={self.name!r}, start={self._start!r}, stop={self._stop!r})"
 
 
 class ButtonEntry(ScheduleEntry):
