@@ -1,8 +1,14 @@
 import enum
 import datetime
 import logging
+import io
+import yaml
+import platform
 
+import astral
+import astral.sun
 import smbus2
+import pytimeparse
 
 logger = logging.getLogger("wittypi4")
 
@@ -123,9 +129,151 @@ class WittyPiException(Exception):
     pass
 
 
-class WittyPi4(object):
-    _instance = None
+class ScheduleEntry():
+    def __init__(
+            self,
+            name: str,
+            start: str,
+            stop: str,
+            location: astral.LocationInfo,
+            tz: datetime.tzinfo = datetime.UTC,
+            minutes_per_hour: int = 60,
+            **kwargs,
+    ):
+        self.name = name
+        self._start = start
+        self._stop = stop
+        self._tz = tz
+        self._location = location
+        self.minutes_per_hour = minutes_per_hour
 
+        if kwargs:
+            logger.warning("Got unknown keywords %s, ignoring.", kwargs.keys())
+
+    @property
+    def next_start(self):
+        return self.parse_timing(self._start)
+
+    @property
+    def next_stop(self):
+        return self.parse_timing(self._stop)
+
+    @property
+    def prev_start(self):
+        return self.parse_timing(self._start, forward=False)
+
+    @property
+    def prev_stop(self):
+        return self.parse_timing(self._stop, forward=False)
+
+    @property
+    def active(self):
+        return self.prev_start > self.prev_stop
+
+    def parse_timing(self, time: str, day: int = 0, forward: bool = True, now: datetime.datetime = None):
+        # initizalize now with datetime.now() if not set
+        now = now or datetime.datetime.now(tz=self._tz)
+        date = now.today() + datetime.timedelta(days=day)
+
+        if "+" in time:
+            ref, op, dur = time.partition("+")
+            ref_ts = astral.sun.sun(self._location.observer, date=date, tzinfo=self._tz)[ref]
+            offset = datetime.timedelta(seconds=pytimeparse.parse(dur, granularity="minutes"))
+            ts = ref_ts + offset
+        elif "-" in time:
+            ref, op, dur = time.partition("-")
+            ref_ts = astral.sun.sun(self._location.observer, date=date, tzinfo=self._tz)[ref]
+            offset = datetime.timedelta(seconds=pytimeparse.parse(dur, granularity="minutes"))
+            ts = ref_ts - offset
+        else:
+            # assume absolute time
+            op = "+"
+            offset = datetime.timedelta(seconds=pytimeparse.parse(time, granularity="minutes"))
+            ref_ts = datetime.datetime.combine(date, datetime.time(0, 0, 0), tzinfo=self._tz)
+            ts = ref_ts + offset
+
+        logger.debug("Time evaluation: '%s' -> %s %s %s = %s", time, ref_ts, op, offset, ts)
+
+        # evaluate parsed timestamp
+        if forward:
+            if ts < now:
+                # if timestamp is in the past, recurse with day+1
+                return self.parse_timing(time, day+1, forward=forward)
+            else:
+                # return timestamp of the future
+                return ts
+        else:
+            if ts > now:
+                # if timestamp is in the future, recurse with day-1
+                return self.parse_timing(time, day-1, forward=forward)
+            else:
+                # return timestamp of the past
+                return ts
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(name={self.name!r}, start={self._start!r}, stop={self._stop!r}, minutes_per_hour={self.minutes_per_hour})"
+
+
+class ScheduleConfiguration():
+
+    def __init__(
+        self,
+        file: io.TextIOWrapper,
+        tz: datetime.tzinfo = datetime.UTC,
+    ):
+        self._file = file
+        self._tz = tz
+
+        raw: dict = yaml.safe_load(file)
+        logger.debug(raw)
+
+        # parsing location information
+        self._location: astral.LocationInfo | None
+        if ("lat" in raw) and ("lon" in raw):
+            self._location = astral.LocationInfo(platform.node(), "", tz, raw["lat"], raw["lon"])
+            logger.debug("Times relative to %s", self._location)
+        else:
+            self._location = None
+            logger.warning("Schedule doesn't contain lat/lon information, relative schedules are disabled.")
+
+        self.force_on: bool = False
+        if "force_on" in raw:
+            if bool(raw["force_on"]):
+                self.force_on = True
+                logger.info("Force on is enabled (%s)", raw["force_on"])
+            else:
+                logger.debug("Force on is disabled (%s)", raw["force_on"])
+
+        if "schedule" not in raw:
+            logger.warning("Schedule missing in configuration, setting force on.")
+            self.force_on = True
+        else:
+            self.entries: list[ScheduleEntry] = []
+            for entry_raw in raw["schedule"]:
+                try:
+                    entry = ScheduleEntry(**entry_raw, location=self._location, tz=self._tz)
+                    self.entries.append(entry)
+                except AttributeError:
+                    logger.warning("Schedule doesn't contain lat/lon information, ignoring %s", entry_raw)
+
+        logging.info("ScheduleConfiguration loaded - active: %s, next_shutdown: %s, next_startup: %s", self.active, self.next_shutdown, self.next_startup)
+
+    @property
+    def next_startup(self):
+        # as all next_starts are in the future, pick the most recent start
+        return min([e.next_start for e in self.entries])
+
+    @property
+    def next_shutdown(self):
+        # system can be shutdown at the next_stop of the active entries
+        return max([e.next_stop for e in self.entries if e.active])
+
+    @property
+    def active(self):
+        return any([e.active for e in self.entries])
+
+
+class WittyPi4(object):
     def __init__(
         self,
         bus: smbus2.SMBus = smbus2.SMBus(1, force=True),
@@ -381,7 +529,7 @@ class WittyPi4(object):
         if (day == 0):
             return None
 
-        logger.debug("Iterating %s to match %02i (%02i) %02i:%02i:%02i", ts, day, weekday, hour, minute, second)
+        logger.debug("Iterating %s to match day %02i %02i:%02i:%02i", ts, day, hour, minute, second)
 
         # get current date and iterate until day matches
         while (second != ts.second) and (second != ALARM_RESET):
@@ -431,6 +579,7 @@ class WittyPi4(object):
             self.alarm2_hour = ALARM_RESET
             self.alarm2_minute = ALARM_RESET
             self.alarm2_second = ALARM_RESET
+            return
 
         ts = ts.astimezone(self._tz)
         if ts < self.rtc_datetime:

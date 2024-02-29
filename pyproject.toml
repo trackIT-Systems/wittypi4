@@ -5,6 +5,8 @@ dependencies = [
     "i2cdevice ~=1.0.0",
     "smbus2 ~=0.4.3",
     "gpiozero ~=2.0.1",
+    "astral ~=3.2",
+    "pytimeparse ~=1.1.8",
 ]
 
 [tool.setuptools]
