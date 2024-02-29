@@ -302,8 +302,11 @@ class ScheduleConfiguration():
                     logger.warning("Schedule doesn't contain lat/lon information, ignoring %s", entry_raw)
             if not self.entries:
                 logger.warning("No schedules found, setting force_on.")
+                self.force_on = True
 
         logger.info("ScheduleConfiguration loaded - active: %s, next_shutdown: %s, next_startup: %s", self.active, self.next_shutdown, self.next_startup)
+        for entry in self.entries:
+            logger.info("%s", entry)
 
     @property
     def next_startup(self) -> datetime.datetime | None:

@@ -42,7 +42,7 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
         sc = ScheduleConfiguration(self._schedule, self._tz)
         if self.action_reason == ActionReason.BUTTON_CLICK:
             button_entry = ButtonEntry(sc.button_delay)
-            logging.info("Started by Button, adding %s", button_entry)
+            logger.info("Started by Button, adding %s", button_entry)
             sc.entries.append(button_entry)
 
         logger.info("Setting ScheduleConfiguration shutdown: %s, startup: %s", sc.next_shutdown, sc.next_startup)
