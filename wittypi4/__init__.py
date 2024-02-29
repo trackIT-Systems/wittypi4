@@ -218,12 +218,14 @@ class ButtonEntry(ScheduleEntry):
     def __init__(
         self,
         button_delay: datetime.timedelta | None,
+        tz: datetime.tzinfo = datetime.UTC,
     ):
         self.button_delay = button_delay
+        self._tz = tz
 
     @property
     def boot_ts(self):
-        return datetime.datetime.now() - datetime.timedelta(seconds=time.monotonic())
+        return datetime.datetime.now(tz=self._tz) - datetime.timedelta(seconds=time.monotonic())
 
     @property
     def prev_start(self) -> datetime.datetime:
@@ -246,7 +248,7 @@ class ButtonEntry(ScheduleEntry):
 
     @property
     def active(self) -> bool:
-        return self.next_stop > datetime.datetime.now()
+        return self.next_stop > datetime.datetime.now(tz=self._tz)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(prev_start={self.prev_start}, next_stop={self.next_stop})"

@@ -6,7 +6,7 @@ lon: 8.78735
 force_on: true
 
 # shutdown interval after manual powering (00:00 disables)
-button_delay: 00:30
+button_delay: "00:30"
 
 # schedules to run the device
 # start/stop to be modified by [sunrise, sunset, dusk, dawn] or as absolute timestamps
