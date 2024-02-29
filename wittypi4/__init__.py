@@ -150,6 +150,9 @@ class ScheduleEntry():
         if kwargs:
             logger.warning("Got unknown keywords %s, ignoring.", kwargs.keys())
 
+        # test if schedule can be evaluated
+        logger.debug("Schedule '%s' loaded, next_start: %s, next_stop: %s", self.name, self.next_stop, self.next_start)
+
     @property
     def next_start(self):
         return self.parse_timing(self._start)
@@ -256,17 +259,23 @@ class ScheduleConfiguration():
                 except AttributeError:
                     logger.warning("Schedule doesn't contain lat/lon information, ignoring %s", entry_raw)
 
-        logging.info("ScheduleConfiguration loaded - active: %s, next_shutdown: %s, next_startup: %s", self.active, self.next_shutdown, self.next_startup)
+        logger.info("ScheduleConfiguration loaded - active: %s, next_shutdown: %s, next_startup: %s", self.active, self.next_shutdown, self.next_startup)
 
     @property
-    def next_startup(self):
+    def next_startup(self) -> datetime.datetime | None:
         # as all next_starts are in the future, pick the most recent start
-        return min([e.next_start for e in self.entries])
+        try:
+            return min([e.next_start for e in self.entries])
+        except ValueError:
+            return None
 
     @property
-    def next_shutdown(self):
-        # system can be shutdown at the next_stop of the active entries
-        return max([e.next_stop for e in self.entries if e.active])
+    def next_shutdown(self) -> datetime.datetime | None:
+        try:
+            # system can be shutdown at the next_stop of the active entries
+            return max([e.next_stop for e in self.entries if e.active])
+        except ValueError:
+            return None
 
     @property
     def active(self):

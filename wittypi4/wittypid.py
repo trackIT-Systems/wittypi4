@@ -4,21 +4,25 @@ import logging
 import signal
 import time
 import threading
+import argparse
+import io
 
 import smbus2
 
-from . import WittyPi4
+from . import WittyPi4, ScheduleConfiguration
 from .__main__ import parser
 
 parser.prog = "wittypid"
 parser.usage = "daemon to configure and handle WittyPi schedules"
+parser.add_argument("-s", "--schedule", type=argparse.FileType('r'), help="ONNX model", default="schedule.yml")
 
 logger = logging.getLogger(parser.prog)
 
 
 class WittyPi4Daemon(WittyPi4, threading.Thread):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, schedule: io.TextIOWrapper, *args, **kwargs):
         self._running = False
+        self._schedule = schedule
         super().__init__(*args, **kwargs)
 
     def terminate(self, sig):
@@ -32,14 +36,19 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
         signal.signal(signal.SIGTERM, lambda sig, _: self.terminate(sig))
 
         logger.info("Welcome to %s, RTC: %s, action reason: %s", parser.prog, self.rtc_datetime, self.action_reason)
-        logger.info("Sheduled shutdown: %s", self.get_shutdown_datetime())
         self.clear_flags()
+
+        sc = ScheduleConfiguration(self._schedule, self._tz)
+        logger.info("Setting ScheduleConfiguration shutdown: %s, startup: %s", sc.next_shutdown, sc.next_startup)
+        self.set_shutdown_datetime(sc.next_shutdown)
+        self.set_startup_datetime(sc.next_startup)
 
         while self._running:
             time.sleep(1)
 
         logger.info("Bye from %s, RTC: %s, action reason: %s", parser.prog, self.rtc_datetime, self.action_reason)
-        logger.info("Sheduled startup: %s", self.get_startup_datetime())
+        logger.info("Resetting shutdown schedule")
+        self.set_shutdown_datetime(None)
 
 
 def main():
@@ -53,7 +62,7 @@ def main():
 
     # setup wittypi
     bus = smbus2.SMBus(bus=args.bus, force=args.force)
-    wp = WittyPi4Daemon(bus, args.addr)
+    wp = WittyPi4Daemon(args.schedule, bus, args.addr)
 
     wp.run()
 

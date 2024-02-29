@@ -1,0 +1,21 @@
+# define coordinates to calculate latitude specific times (sunrise, ...)
+lat: 51
+lon: 8
+# set true, to keep devices from powering off
+force_on: false
+# shutdown interval after manual powering (00:00 disables)
+button_delay: 00:30
+
+# schedules to run the device
+# from/to to be modified by [sunrise, sunset, dusk, dawn, utc (default)]
+schedule:
+  - name: debugging
+    start: "10:00"
+    stop: "13:00"
+  - name: owls
+    start: sunset-00:30
+    stop: sunrise+00:30
+    minutes_per_hour: 15
+  - name: Singvögel
+    start: sunrise-01:00
+    stop: sunrise+02:00
