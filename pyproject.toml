@@ -7,6 +7,7 @@ dependencies = [
     "gpiozero ~=2.0.1",
     "astral ~=3.2",
     "pytimeparse ~=1.1.8",
+    "pyyaml ~=6.0.1",
 ]
 
 [tool.setuptools]
