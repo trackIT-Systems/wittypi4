@@ -4,6 +4,8 @@ import logging
 import io
 import yaml
 import platform
+import time
+import collections.abc
 
 import astral
 import astral.sun
@@ -154,23 +156,23 @@ class ScheduleEntry():
         logger.debug("Schedule '%s' loaded, next_start: %s, next_stop: %s", self.name, self.next_stop, self.next_start)
 
     @property
-    def next_start(self):
+    def next_start(self) -> datetime.datetime:
         return self.parse_timing(self._start)
 
     @property
-    def next_stop(self):
+    def next_stop(self) -> datetime.datetime:
         return self.parse_timing(self._stop)
 
     @property
-    def prev_start(self):
+    def prev_start(self) -> datetime.datetime:
         return self.parse_timing(self._start, forward=False)
 
     @property
-    def prev_stop(self):
+    def prev_stop(self) -> datetime.datetime:
         return self.parse_timing(self._stop, forward=False)
 
     @property
-    def active(self):
+    def active(self) -> bool:
         return self.prev_start > self.prev_stop
 
     def parse_timing(self, time: str, day: int = 0, forward: bool = True, now: datetime.datetime = None):
@@ -190,12 +192,9 @@ class ScheduleEntry():
             ts = ref_ts - offset
         else:
             # assume absolute time
-            op = "+"
             offset = datetime.timedelta(seconds=pytimeparse.parse(time, granularity="minutes"))
             ref_ts = datetime.datetime.combine(date, datetime.time(0, 0, 0), tzinfo=self._tz)
             ts = ref_ts + offset
-
-        logger.debug("Time evaluation: '%s' -> %s %s %s = %s", time, ref_ts, op, offset, ts)
 
         # evaluate parsed timestamp
         if forward:
@@ -215,6 +214,44 @@ class ScheduleEntry():
 
     def __repr__(self):
         return f"{self.__class__.__name__}(name={self.name!r}, start={self._start!r}, stop={self._stop!r}, minutes_per_hour={self.minutes_per_hour})"
+
+
+class ButtonEntry(ScheduleEntry):
+    def __init__(
+        self,
+        button_delay: datetime.timedelta | None,
+    ):
+        self.button_delay = button_delay
+
+    @property
+    def boot_ts(self):
+        return datetime.datetime.now() - datetime.timedelta(seconds=time.monotonic())
+
+    @property
+    def prev_start(self) -> datetime.datetime:
+        return self.boot_ts
+
+    @property
+    def next_stop(self) -> datetime.datetime:
+        if self.button_delay:
+            return self.boot_ts + self.button_delay
+        else:
+            return None
+
+    @property
+    def next_start(self) -> datetime.datetime:
+        return None
+
+    @property
+    def prev_stop(self) -> datetime.datetime:
+        return None
+
+    @property
+    def active(self) -> bool:
+        return self.next_stop > datetime.datetime.now()
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(prev_start={self.prev_start}, next_stop={self.next_stop})"
 
 
 class ScheduleConfiguration():
@@ -247,17 +284,26 @@ class ScheduleConfiguration():
             else:
                 logger.debug("Force on is disabled (%s)", raw["force_on"])
 
-        if "schedule" not in raw:
-            logger.warning("Schedule missing in configuration, setting force on.")
+        try:
+            self.button_delay = datetime.timedelta(seconds=pytimeparse.parse(raw["button_delay"], granularity="minutes"))
+        except Exception:
+            self.button_delay = None
+        logger.debug("Using button delay of %s", self.button_delay)
+
+        self.entries: list[ScheduleEntry] = []
+
+        if "schedule" not in raw or not isinstance(raw["schedule"], collections.abc.Iterable):
+            logger.warning("Schedule missing in configuration, setting force_on.")
             self.force_on = True
         else:
-            self.entries: list[ScheduleEntry] = []
             for entry_raw in raw["schedule"]:
                 try:
                     entry = ScheduleEntry(**entry_raw, location=self._location, tz=self._tz)
                     self.entries.append(entry)
                 except AttributeError:
                     logger.warning("Schedule doesn't contain lat/lon information, ignoring %s", entry_raw)
+            if not self.entries:
+                logger.warning("No schedules found, setting force_on.")
 
         logger.info("ScheduleConfiguration loaded - active: %s, next_shutdown: %s, next_startup: %s", self.active, self.next_shutdown, self.next_startup)
 
@@ -265,7 +311,7 @@ class ScheduleConfiguration():
     def next_startup(self) -> datetime.datetime | None:
         # as all next_starts are in the future, pick the most recent start
         try:
-            return min([e.next_start for e in self.entries])
+            return min([e.next_start for e in self.entries if e.next_start])
         except ValueError:
             return None
 
@@ -273,13 +319,13 @@ class ScheduleConfiguration():
     def next_shutdown(self) -> datetime.datetime | None:
         try:
             # system can be shutdown at the next_stop of the active entries
-            return max([e.next_stop for e in self.entries if e.active])
+            return max([e.next_stop for e in self.entries if e.next_stop and e.active])
         except ValueError:
             return None
 
     @property
     def active(self):
-        return any([e.active for e in self.entries])
+        return any([e.active for e in self.entries]) or self.force_on
 
 
 class WittyPi4(object):
@@ -561,6 +607,7 @@ class WittyPi4(object):
             self.alarm1_hour = ALARM_RESET
             self.alarm1_minute = ALARM_RESET
             self.alarm1_second = ALARM_RESET
+            return
 
         ts = ts.astimezone(self._tz)
         if ts < self.rtc_datetime:

@@ -4,7 +4,7 @@ import datetime
 
 import smbus2
 
-from . import WittyPi4
+from wittypi4 import WittyPi4
 
 logger = logging.getLogger("wittypi4")
 
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     wp.clear_flags()
 
     # schedule next startup
-    startup = wp.rtc_datetime + datetime.timedelta(seconds=20)
+    startup = wp.rtc_datetime + datetime.timedelta(seconds=25)
     logger.info("Scheduling startup @%s", startup)
     wp.set_startup_datetime(startup)
 

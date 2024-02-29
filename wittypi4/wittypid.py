@@ -6,10 +6,11 @@ import time
 import threading
 import argparse
 import io
+import datetime
 
 import smbus2
 
-from . import WittyPi4, ScheduleConfiguration
+from . import WittyPi4, ScheduleConfiguration, ActionReason, ButtonEntry
 from .__main__ import parser
 
 parser.prog = "wittypid"
@@ -39,9 +40,19 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
         self.clear_flags()
 
         sc = ScheduleConfiguration(self._schedule, self._tz)
+        if self.action_reason == ActionReason.BUTTON_CLICK:
+            button_entry = ButtonEntry(sc.button_delay)
+            logging.info("Started by Button, adding %s", button_entry)
+            sc.entries.append(button_entry)
+
         logger.info("Setting ScheduleConfiguration shutdown: %s, startup: %s", sc.next_shutdown, sc.next_startup)
         self.set_shutdown_datetime(sc.next_shutdown)
         self.set_startup_datetime(sc.next_startup)
+
+        if not sc.active:
+            delay = datetime.timedelta(seconds=10)
+            logger.info("Shouldn't be active, scheduling shutdown in %ss", delay.total_seconds())
+            self.set_shutdown_datetime(self.rtc_datetime + delay)
 
         while self._running:
             time.sleep(1)
