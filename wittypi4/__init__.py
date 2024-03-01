@@ -320,6 +320,9 @@ class ScheduleConfiguration():
 
     @property
     def next_shutdown(self) -> datetime.datetime | None:
+        if self.force_on:
+            return None
+
         try:
             # system can be shutdown at the next_stop of the active entries
             return max([e.next_stop for e in self.entries if e.next_stop and e.active])
@@ -342,9 +345,12 @@ class WittyPi4(object):
         self._addr = addr
         self._tz = tz
 
-        firmware_id = self.firmware_id
-        if firmware_id != 0x26:
-            raise WittyPiException("Unknown Firmware Id (got 0x%x, expected 0x26)" % firmware_id)
+        try:
+            firmware_id = self.firmware_id
+            if firmware_id != 0x26:
+                raise WittyPiException("unknown Firmware Id (got 0x%x, expected 0x26)" % firmware_id)
+        except OSError:
+            raise WittyPiException("error reading address 0x%x, check device connection" % self._addr)
 
         logger.debug("WittyPi 4 probed successfully")
 
@@ -804,7 +810,7 @@ class WittyPi4(object):
         self.alarm1_flag = False
         self.alarm2_flag = False
 
-    def rtc_valid(self, threshold=datetime.timedelta(seconds=60)) -> bool:
+    def rtc_sysclock_match(self, threshold=datetime.timedelta(seconds=2)) -> bool:
         return abs(self.rtc_datetime - datetime.datetime.now(tz=self._tz)) < threshold
 
     def dump_config(self) -> dict:
