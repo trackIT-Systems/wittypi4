@@ -23,7 +23,7 @@ logger = logging.getLogger(parser.prog)
 
 def fake_hwclock() -> datetime.datetime:
     path = pathlib.Path("/etc/fake-hwclock.data")
-    with path.open() as fp:
+    with path.open(encoding="ascii") as fp:
         data = fp.read()
 
     ts = datetime.datetime.strptime(data, '%Y-%m-%d %H:%M:%S\n').astimezone(datetime.UTC)
@@ -62,7 +62,7 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
 
             # check RTC and systemclock matching
             if not self.rtc_sysclock_match():
-                logger.warning("RTC is does not match system clock, check system configuration", self.rtc_datetime)
+                logger.warning("RTC is does not match system clock, check system configuration")
                 exit(3)
 
             # set clock synced

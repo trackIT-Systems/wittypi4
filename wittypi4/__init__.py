@@ -2,11 +2,11 @@ import enum
 import datetime
 import logging
 import io
-import yaml
 import platform
 import time
 import collections.abc
 
+import yaml
 import astral
 import astral.sun
 import smbus2
@@ -349,8 +349,8 @@ class WittyPi4(object):
             firmware_id = self.firmware_id
             if firmware_id != 0x26:
                 raise WittyPiException("unknown Firmware Id (got 0x%x, expected 0x26)" % firmware_id)
-        except OSError:
-            raise WittyPiException("error reading address 0x%x, check device connection" % self._addr)
+        except OSError as ex:
+            raise WittyPiException("error reading address 0x%x, check device connection" % self._addr) from ex
 
         logger.debug("WittyPi 4 probed successfully")
 
@@ -766,7 +766,13 @@ class WittyPi4(object):
         self._bus.write_byte_data(self._addr, I2C_CONF_DEFAULT_ON_DELAY, value)
 
     # LM75B Temperature Sensor
-    # TODO: implement
+    @staticmethod
+    def _lm75b_celsius(data):
+        return int.from_bytes(data.to_bytes(2, "little"), signed=True) / 256
+
+    @property
+    def lm75b_temperature(self):
+        return self._lm75b_celsius(self._bus.read_word_data(self._addr, I2C_LM75B_TEMPERATURE))
 
     # RTC PCF85063
     @property
@@ -818,4 +824,15 @@ class WittyPi4(object):
             prop: getattr(self, prop)
             for prop in dir(self)
             if not (prop.startswith("_") or callable(getattr(self, prop)))
+        }
+
+    def get_status(self) -> dict:
+        return {
+            "Id": self.firmware_id,
+            "Input Voltage (V)": self.voltage_in,
+            "Output Voltage (V)": self.voltage_out,
+            "Output Current (A)": self.current_out,
+            "Power Mode": self.power_ldo,
+            "Revision": self.firmware_revision,
+            "Temperature (°C)": self.lm75b_temperature,
         }
