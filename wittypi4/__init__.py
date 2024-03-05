@@ -826,7 +826,7 @@ class WittyPi4(object):
             if not (prop.startswith("_") or callable(getattr(self, prop)))
         }
 
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, float | int]:
         return {
             "Id": self.firmware_id,
             "Input Voltage (V)": self.voltage_in,
