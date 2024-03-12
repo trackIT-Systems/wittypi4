@@ -1,12 +1,10 @@
 import enum
 import datetime
 import logging
-import io
 import platform
 import time
 import collections.abc
 
-import yaml
 import astral
 import astral.sun
 import smbus2
@@ -151,61 +149,57 @@ class ScheduleEntry():
             logger.warning("Got unknown keywords %s, ignoring.", kwargs.keys())
 
         # test if schedule can be evaluated
-        logger.debug("Schedule '%s' loaded, next_start: %s, next_stop: %s", self.name, self.next_stop, self.next_start)
+        logger.debug("Schedule '%s' loaded, next_start: %s, next_stop: %s", self.name, self.next_stop(), self.next_start())
 
-    @property
-    def next_start(self) -> datetime.datetime:
-        return self.parse_timing(self._start)
+    def next_start(self, now: datetime.datetime | None = None) -> datetime.datetime:
+        return self.parse_timing(self._start, now=now)
 
-    @property
-    def next_stop(self) -> datetime.datetime:
-        return self.parse_timing(self._stop)
+    def next_stop(self, now: datetime.datetime | None = None) -> datetime.datetime:
+        return self.parse_timing(self._stop, now=now)
 
-    @property
-    def prev_start(self) -> datetime.datetime:
-        return self.parse_timing(self._start, forward=False)
+    def prev_start(self, now: datetime.datetime | None = None) -> datetime.datetime:
+        return self.parse_timing(self._start, forward=False, now=now)
 
-    @property
-    def prev_stop(self) -> datetime.datetime:
-        return self.parse_timing(self._stop, forward=False)
+    def prev_stop(self, now: datetime.datetime | None = None) -> datetime.datetime:
+        return self.parse_timing(self._stop, forward=False, now=now)
 
-    @property
-    def active(self) -> bool:
-        return self.prev_start > self.prev_stop
+    def active(self, now: datetime.datetime | None = None) -> bool:
+        return self.prev_start(now=now) > self.prev_stop(now=now)
 
-    def parse_timing(self, time: str, day: int = 0, forward: bool = True, now: datetime.datetime = None):
+    def parse_timing(self, time_str: str, day: int = 0, forward: bool = True, now: datetime.datetime = None):
+
         # initizalize now with datetime.now() if not set
         now = now or datetime.datetime.now(tz=self._tz)
-        date = now.today() + datetime.timedelta(days=day)
+        date = now.date() + datetime.timedelta(days=day)
 
-        if "+" in time:
-            ref, op, dur = time.partition("+")
+        if "+" in time_str:
+            ref, op, dur = time_str.partition("+")
             ref_ts = astral.sun.sun(self._location.observer, date=date, tzinfo=self._tz)[ref]
             offset = datetime.timedelta(seconds=pytimeparse.parse(dur, granularity="minutes"))
             ts = ref_ts + offset
-        elif "-" in time:
-            ref, op, dur = time.partition("-")
+        elif "-" in time_str:
+            ref, op, dur = time_str.partition("-")
             ref_ts = astral.sun.sun(self._location.observer, date=date, tzinfo=self._tz)[ref]
             offset = datetime.timedelta(seconds=pytimeparse.parse(dur, granularity="minutes"))
             ts = ref_ts - offset
         else:
             # assume absolute time
-            offset = datetime.timedelta(seconds=pytimeparse.parse(time, granularity="minutes"))
+            offset = datetime.timedelta(seconds=pytimeparse.parse(time_str, granularity="minutes"))
             ref_ts = datetime.datetime.combine(date, datetime.time(0, 0, 0), tzinfo=self._tz)
             ts = ref_ts + offset
 
         # evaluate parsed timestamp
         if forward:
-            if ts < now:
-                # if timestamp is in the past, recurse with day+1
-                return self.parse_timing(time, day+1, forward=forward)
+            if ts <= now:
+                # if timestamp is in the past or now, recurse with day+1
+                return self.parse_timing(time_str, day+1, forward=forward, now=now)
             else:
                 # return timestamp of the future
                 return ts
         else:
             if ts > now:
                 # if timestamp is in the future, recurse with day-1
-                return self.parse_timing(time, day-1, forward=forward)
+                return self.parse_timing(time_str, day-1, forward=forward, now=now)
             else:
                 # return timestamp of the past
                 return ts
@@ -227,76 +221,70 @@ class ButtonEntry(ScheduleEntry):
     def boot_ts(self):
         return datetime.datetime.now(tz=self._tz) - datetime.timedelta(seconds=time.monotonic())
 
-    @property
-    def prev_start(self) -> datetime.datetime:
+    def prev_start(self, now: datetime.datetime | None = None) -> datetime.datetime:
         return self.boot_ts
 
-    @property
-    def next_stop(self) -> datetime.datetime:
+    def next_stop(self, now: datetime.datetime | None = None) -> datetime.datetime:
         if self.button_delay:
             return self.boot_ts + self.button_delay
         else:
             return None
 
-    @property
-    def next_start(self) -> datetime.datetime:
+    def next_start(self, now: datetime.datetime | None = None) -> datetime.datetime:
         return None
 
-    @property
-    def prev_stop(self) -> datetime.datetime:
+    def prev_stop(self, now: datetime.datetime | None = None) -> datetime.datetime:
         return None
 
-    @property
-    def active(self) -> bool:
-        return self.next_stop > datetime.datetime.now(tz=self._tz)
+    def active(self, now: datetime.datetime | None = None) -> bool:
+        now = now or datetime.datetime.now(tz=self._tz)
+        return self.next_stop(now) > now
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(prev_start={self.prev_start}, next_stop={self.next_stop})"
+        return f"{self.__class__.__name__}(prev_start={self.prev_start()}, next_stop={self.next_stop()})"
 
 
 class ScheduleConfiguration():
 
     def __init__(
         self,
-        file: io.TextIOWrapper,
+        config: dict,
         tz: datetime.tzinfo = datetime.UTC,
     ):
-        self._file = file
         self._tz = tz
 
-        raw: dict = yaml.safe_load(file)
-        logger.debug(raw)
+        logger.debug(config)
 
         # parsing location information
         self._location: astral.LocationInfo | None
-        if ("lat" in raw) and ("lon" in raw):
-            self._location = astral.LocationInfo(platform.node(), "", tz, raw["lat"], raw["lon"])
+        if ("lat" in config) and ("lon" in config):
+            self._location = astral.LocationInfo(platform.node(), "", tz, config["lat"], config["lon"])
             logger.debug("Times relative to %s", self._location)
         else:
             self._location = None
             logger.warning("Schedule doesn't contain lat/lon information, relative schedules are disabled.")
 
         self.force_on: bool = False
-        if "force_on" in raw:
-            if bool(raw["force_on"]):
+        if "force_on" in config:
+            if bool(config["force_on"]):
                 self.force_on = True
-                logger.info("Force on is enabled (%s)", raw["force_on"])
+                logger.info("Force on is enabled (%s)", config["force_on"])
             else:
-                logger.debug("Force on is disabled (%s)", raw["force_on"])
+                logger.debug("Force on is disabled (%s)", config["force_on"])
 
         try:
-            self.button_delay = datetime.timedelta(seconds=pytimeparse.parse(raw["button_delay"], granularity="minutes"))
+            self.button_delay = datetime.timedelta(seconds=pytimeparse.parse(config["button_delay"], granularity="minutes"))
         except Exception:
             self.button_delay = None
         logger.debug("Using button delay of %s", self.button_delay)
 
         self.entries: list[ScheduleEntry] = []
 
-        if "schedule" not in raw or not isinstance(raw["schedule"], collections.abc.Iterable):
+        if "schedule" not in config or not isinstance(config["schedule"], collections.abc.Iterable):
             logger.warning("Schedule missing in configuration, setting force_on.")
             self.force_on = True
         else:
-            for entry_raw in raw["schedule"]:
+            for entry_raw in config["schedule"]:
                 try:
                     entry = ScheduleEntry(**entry_raw, location=self._location, tz=self._tz)
                     self.entries.append(entry)
@@ -306,42 +294,52 @@ class ScheduleConfiguration():
                 logger.warning("No schedules found, setting force_on.")
                 self.force_on = True
 
-        logger.info("ScheduleConfiguration loaded - active: %s, next_shutdown: %s, next_startup: %s", self.active, self.next_shutdown, self.next_startup)
+        logger.info("ScheduleConfiguration loaded - active: %s, next_shutdown: %s, next_startup: %s", self.active(), self.next_shutdown(), self.next_startup())
         for entry in self.entries:
             logger.info("%s", entry)
 
-    @property
-    def next_startup(self) -> datetime.datetime | None:
+    def next_startup(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
+        now = now or datetime.datetime.now(tz=self._tz)
         # as all next_starts are in the future, pick the most recent start
         try:
-            return min([e.next_start for e in self.entries if e.next_start])
+            return min([e.next_start(now) for e in self.entries if e.next_start(now)])
         except ValueError:
             return None
 
-    @property
-    def next_shutdown(self) -> datetime.datetime | None:
+    def next_shutdown(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
+        now = now or datetime.datetime.now(tz=self._tz)
         if self.force_on:
             return None
 
         try:
-            # system can be shutdown at the next_stop of the active entries
-            return max([e.next_stop for e in self.entries if e.next_stop and e.active])
+            next_ts = now
+            while self.active(next_ts):
+                next_ts = min([e.next_stop(next_ts) for e in self.entries if e.next_stop(next_ts)])
+                logger.debug("Next stop event would be %s, are we active then? %s", next_ts, self.active(next_ts))
+
+                if next_ts - now >= datetime.timedelta(days=1):
+                    logger.debug("No shutdown required, we are online for over 1 day")
+                    return None
+
+            return next_ts
+
         except ValueError:
             return None
 
-    @property
-    def active(self):
-        return any([e.active for e in self.entries]) or self.force_on
+    def active(self, now: datetime.datetime | None = None):
+        now = now or datetime.datetime.now(tz=self._tz)
+        return self.force_on or any([e.active(now) for e in self.entries])
 
 
 class WittyPi4(object):
     def __init__(
         self,
-        bus: smbus2.SMBus = smbus2.SMBus(1, force=True),
+        bus: smbus2.SMBus | None,
         addr: int = I2C_MC_ADDRESS,
         tz=datetime.UTC,
     ):
-        self._bus = bus
+
+        self._bus = bus or smbus2.SMBus(1, force=True)
         self._addr = addr
         self._tz = tz
 

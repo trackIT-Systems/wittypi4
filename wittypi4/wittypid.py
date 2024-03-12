@@ -8,6 +8,8 @@ import argparse
 import io
 import datetime
 import pathlib
+import yaml
+import os
 
 import smbus2
 
@@ -33,17 +35,15 @@ def fake_hwclock() -> datetime.datetime:
 
 class WittyPi4Daemon(WittyPi4, threading.Thread):
     def __init__(self, schedule: io.TextIOWrapper, *args, **kwargs):
-        self._running = False
+        self._stop = threading.Event()
         self._schedule = schedule
         super().__init__(*args, **kwargs)
 
     def terminate(self, sig):
         logger.warning("Caught %s, terminating.", signal.Signals(sig).name)
-        self._running = False
+        self._stop.set()
 
     def run(self):
-        self._running = True
-
         signal.signal(signal.SIGINT, lambda sig, _: self.terminate(sig))
         signal.signal(signal.SIGTERM, lambda sig, _: self.terminate(sig))
 
@@ -68,34 +68,51 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
             # set clock synced
             sync_path = pathlib.Path("/run/systemd/timesync/synchronized")
             logger.info("RTC is valid, setting %s", sync_path)
-            sync_path.parent.mkdir(exist_ok=True)
+            while not sync_path.parent.exists():
+                logger.info("Waiting for /run/systemd/timesync/...")
+                time.sleep(1)
             sync_path.touch()
         except ValueError:
             logger.error("RTC is unset. Connect to GPS/internet, and wait for timesync")
             exit(3)
 
         # read schedule configuration
-        sc = ScheduleConfiguration(self._schedule, self._tz)
-        if self.action_reason == ActionReason.BUTTON_CLICK:
+        schedule_raw: dict = yaml.safe_load(self._schedule)
+        sc = ScheduleConfiguration(schedule_raw, self._tz)
+
+        if self.action_reason in [ActionReason.BUTTON_CLICK, ActionReason.VOLTAGE_RESTORE]:
             button_entry = ButtonEntry(sc.button_delay)
-            logger.info("Started by Button, adding %s", button_entry)
+            logger.info("Started by %s, adding %s", self.action_reason, button_entry)
             sc.entries.append(button_entry)
 
-        logger.info("Setting ScheduleConfiguration shutdown: %s, startup: %s", sc.next_shutdown, sc.next_startup)
-        self.set_shutdown_datetime(sc.next_shutdown)
-        self.set_startup_datetime(sc.next_startup)
+        shutdown_delay_s = 30
 
-        if not sc.active:
-            delay = datetime.timedelta(seconds=10)
-            logger.info("Shouldn't be active, scheduling shutdown in %ss", delay.total_seconds())
-            self.set_shutdown_datetime(self.rtc_datetime + delay)
+        while not self._stop.is_set():
+            now = self.rtc_datetime
+            next_startup = sc.next_startup(now)
+            next_shutdown = sc.next_shutdown(now)
 
-        while self._running:
-            time.sleep(1)
+            logger.info("Setting next_shutdown: %s, next_startup: %s", next_shutdown, next_startup)
+            self.set_startup_datetime(next_startup)
+            self.set_shutdown_datetime(next_shutdown)
 
-        logger.info("Bye from %s, RTC: %s, action reason: %s", parser.prog, self.rtc_datetime, self.action_reason)
-        logger.info("Resetting shutdown schedule")
+            # somehow we're here while should't be active, setting shutdown with delay
+            if not sc.active(now):
+                logger.info("Shouldn't be active, scheduling shutdown in %ss", shutdown_delay_s)
+                self.set_shutdown_datetime(self.rtc_datetime + datetime.timedelta(seconds=shutdown_delay_s))
+
+            # somehow the shutdown alarm fired, and we're still running.
+            elif self.action_reason in [ActionReason.ALARM_SHUTDOWN, ActionReason.LOW_VOLTAGE, ActionReason.OVER_TEMPERATURE]:
+                logger.warning("Alarm %s fired, shutting down in %ss", self.action_reason, shutdown_delay_s)
+                os.system(f"shutdown {shutdown_delay_s}")
+
+            # wait for 60s or until signal
+            self._stop.wait(60)
+
         self.set_shutdown_datetime(None)
+        self.set_startup_datetime(sc.next_startup())
+        logger.info("Terminating, set ScheduleConfiguration shutdown: %s, startup: %s", self.get_shutdown_datetime(), self.get_startup_datetime())
+        logger.info("Bye from wittypid")
 
 
 def main():
