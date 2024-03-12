@@ -103,8 +103,8 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
 
             # somehow the shutdown alarm fired, and we're still running.
             elif self.action_reason in [ActionReason.ALARM_SHUTDOWN, ActionReason.LOW_VOLTAGE, ActionReason.OVER_TEMPERATURE]:
-                logger.warning("Alarm %s fired, shutting down in %ss", self.action_reason, shutdown_delay_s)
-                os.system(f"shutdown {shutdown_delay_s}")
+                logger.warning("Alarm %s fired, shutting down", self.action_reason)
+                os.system("shutdown 0")
 
             # wait for 60s or until signal
             self._stop.wait(60)
