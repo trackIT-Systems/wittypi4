@@ -338,7 +338,7 @@ class ScheduleConfiguration():
 class WittyPi4(object):
     def __init__(
         self,
-        bus: smbus2.SMBus | None,
+        bus: smbus2.SMBus | None = None,
         addr: int = I2C_MC_ADDRESS,
         tz=datetime.UTC,
     ):
