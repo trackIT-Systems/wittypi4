@@ -238,7 +238,11 @@ class ButtonEntry(ScheduleEntry):
 
     def active(self, now: datetime.datetime | None = None) -> bool:
         now = now or datetime.datetime.now(tz=self._tz)
-        return self.next_stop(now) > now
+        next_stop = self.next_stop(now)
+        if next_stop:
+            return self.next_stop(now) > now
+        else:
+            return True
 
     def __repr__(self):
         return f"{self.__class__.__name__}(prev_start={self.prev_start()}, next_stop={self.next_stop()})"
@@ -314,7 +318,7 @@ class ScheduleConfiguration():
         try:
             next_ts = now
             while self.active(next_ts):
-                next_ts = min([e.next_stop(next_ts) for e in self.entries if e.next_stop(next_ts)])
+                next_ts = min([e.next_stop(next_ts) for e in self.entries if e.next_stop(next_ts) and e.next_stop(next_ts) > now])
                 logger.debug("Next stop event would be %s, are we active then? %s", next_ts, self.active(next_ts))
 
                 if next_ts - now >= datetime.timedelta(days=1):
