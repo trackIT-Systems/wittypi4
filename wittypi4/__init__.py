@@ -356,6 +356,9 @@ class WittyPi4(object):
 
         logger.debug("WittyPi 4 probed successfully")
 
+    def __del__(self):
+        self._bus.close()
+
     # Read registers
     @property
     def firmware_id(self) -> int:
