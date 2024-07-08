@@ -60,9 +60,9 @@ The module can either be compiled using the Makefile, i.e. `make; sudo make inst
 
 ```bash
 # copy source files
-sudo cp -R /home/pi/wittypi4 /usr/src/wittypi4-0.0.1
+sudo cp -R /home/pi/wittypi4 /usr/src/wittypi4-6.6.y
 # install & compile using dkms
-sudo dkms install wittypi4/0.0.1
+sudo dkms install wittypi4/6.6.y
 ```
 
 ### Device Tree Overlay / Raspberry Pi
