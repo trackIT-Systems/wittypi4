@@ -128,6 +128,16 @@ class ActionReason(enum.Enum):
     REBOOT = 0x0B
     GUARANTEED_WAKE = 0x0C
 
+    @classmethod
+    def _missing_(cls, value: object) -> int:
+        if isinstance(value, int):
+            # For integer values, return a custom object
+            logger.warning("ActionReason %i is unknown!", value)
+            return 0
+        else:
+            # For non-integer values, raise a ValueError
+            raise ValueError(f"{value} is not a valid {cls.__name__}")
+
 
 class WittyPiException(Exception):
     pass
