@@ -63,3 +63,5 @@ if __name__ == "__main__":
     # debug print info
     logger.info("Next Startup: %s", wp.get_startup_datetime())
     logger.info("Next Shutdown: %s", wp.get_shutdown_datetime())
+
+    logger.info("%s", wp.get_status())

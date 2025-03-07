@@ -293,11 +293,13 @@ class WittyPi4(object):
         try:
             firmware_id = self.firmware_id
             if firmware_id != 0x26:
-                raise WittyPiException("unknown Firmware Id (got 0x%x, expected 0x26)" % firmware_id)
+                raise WittyPiException("unknown Firmware Id (got 0x%02x, expected 0x26)" % firmware_id)
         except OSError as ex:
-            raise WittyPiException("error reading address 0x%x, check device connection" % self._addr) from ex
+            raise WittyPiException("error reading address 0x%02x, check device connection" % self._addr) from ex
 
-        logger.debug("WittyPi 4 probed successfully")
+        logger.info(
+            "WittyPi 4 probed successfully, id: 0x%02x, revision 0x%02x", self.firmware_id, self.firmware_revision
+        )
 
     def __del__(self):
         self._bus.close()
