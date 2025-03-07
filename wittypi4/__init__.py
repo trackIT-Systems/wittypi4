@@ -9,6 +9,7 @@ import astral
 import astral.sun
 import pytimeparse
 import smbus2
+from scheduleparse import ScheduleEntry
 
 logger = logging.getLogger("wittypi4")
 
@@ -143,86 +144,6 @@ class WittyPiException(Exception):
     pass
 
 
-class ScheduleEntry:
-    def __init__(
-        self,
-        name: str,
-        start: str,
-        stop: str,
-        location: astral.LocationInfo,
-        tz: datetime.tzinfo = datetime.UTC,
-        **kwargs,
-    ):
-        self.name = name
-        self._start = start
-        self._stop = stop
-        self._tz = tz
-        self._location = location
-
-        if kwargs:
-            logger.warning("Got unknown keywords %s, ignoring.", kwargs.keys())
-
-        # test if schedule can be evaluated
-        logger.debug(
-            "Schedule '%s' loaded, next_start: %s, next_stop: %s", self.name, self.next_stop(), self.next_start()
-        )
-
-    def next_start(self, now: datetime.datetime | None = None) -> datetime.datetime:
-        return self.parse_timing(self._start, now=now)
-
-    def next_stop(self, now: datetime.datetime | None = None) -> datetime.datetime:
-        return self.parse_timing(self._stop, now=now)
-
-    def prev_start(self, now: datetime.datetime | None = None) -> datetime.datetime:
-        return self.parse_timing(self._start, forward=False, now=now)
-
-    def prev_stop(self, now: datetime.datetime | None = None) -> datetime.datetime:
-        return self.parse_timing(self._stop, forward=False, now=now)
-
-    def active(self, now: datetime.datetime | None = None) -> bool:
-        return self.prev_start(now=now) > self.prev_stop(now=now)
-
-    def parse_timing(self, time_str: str, day: int = 0, forward: bool = True, now: datetime.datetime = None):
-        # initizalize now with datetime.now() if not set
-        now = now or datetime.datetime.now(tz=self._tz)
-        date = now.date() + datetime.timedelta(days=day)
-
-        if "+" in time_str:
-            ref, op, dur = time_str.partition("+")
-            ref_ts = astral.sun.sun(self._location.observer, date=date, tzinfo=self._tz)[ref]
-            offset = datetime.timedelta(seconds=pytimeparse.parse(dur, granularity="minutes"))
-            ts = ref_ts + offset
-        elif "-" in time_str:
-            ref, op, dur = time_str.partition("-")
-            ref_ts = astral.sun.sun(self._location.observer, date=date, tzinfo=self._tz)[ref]
-            offset = datetime.timedelta(seconds=pytimeparse.parse(dur, granularity="minutes"))
-            ts = ref_ts - offset
-        else:
-            # assume absolute time
-            offset = datetime.timedelta(seconds=pytimeparse.parse(time_str, granularity="minutes"))
-            ref_ts = datetime.datetime.combine(date, datetime.time(0, 0, 0), tzinfo=self._tz)
-            ts = ref_ts + offset
-
-        # evaluate parsed timestamp
-        if forward:
-            if ts <= now:
-                # if timestamp is in the past or now, recurse with day+1
-                return self.parse_timing(time_str, day + 1, forward=forward, now=now)
-            else:
-                # return timestamp of the future
-                return ts
-        else:
-            if ts > now:
-                # if timestamp is in the future, recurse with day-1
-                return self.parse_timing(time_str, day - 1, forward=forward, now=now)
-            else:
-                # return timestamp of the past
-                return ts
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}(name={self.name!r}, start={self._start!r}, stop={self._stop!r})"
-
-
 class ButtonEntry(ScheduleEntry):
     def __init__(
         self,
@@ -239,23 +160,23 @@ class ButtonEntry(ScheduleEntry):
     def prev_start(self, now: datetime.datetime | None = None) -> datetime.datetime:
         return self.boot_ts
 
-    def next_stop(self, now: datetime.datetime | None = None) -> datetime.datetime:
+    def next_stop(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
         if self.button_delay:
             return self.boot_ts + self.button_delay
         else:
             return None
 
-    def next_start(self, now: datetime.datetime | None = None) -> datetime.datetime:
+    def next_start(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
         return None
 
-    def prev_stop(self, now: datetime.datetime | None = None) -> datetime.datetime:
+    def prev_stop(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
         return None
 
     def active(self, now: datetime.datetime | None = None) -> bool:
         now = now or datetime.datetime.now(tz=self._tz)
         next_stop = self.next_stop(now)
         if next_stop:
-            return self.next_stop(now) > now
+            return next_stop > now
         else:
             return True
 
@@ -473,7 +394,7 @@ class WittyPi4(object):
 
     @power_cut_delay.setter
     def power_cut_delay(self, value: float):
-        self._bus.write_byte_data(self._addr, I2C_CONF_BLINK_LED, int(value * 10))
+        self._bus.write_byte_data(self._addr, I2C_CONF_POWER_CUT_DELAY, int(value * 10))
 
     @property
     def recovery_voltage(self) -> float:
