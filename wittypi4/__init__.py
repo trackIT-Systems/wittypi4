@@ -1,14 +1,14 @@
-import enum
+import collections.abc
 import datetime
+import enum
 import logging
 import platform
 import time
-import collections.abc
 
 import astral
 import astral.sun
-import smbus2
 import pytimeparse
+import smbus2
 
 logger = logging.getLogger("wittypi4")
 
@@ -98,10 +98,10 @@ I2C_RTC_TIMER_VALUE = 70
 I2C_RTC_TIMER_MODE = 71
 
 # GPIO Pins
-HALT_PIN = 4    # halt by GPIO-4 (BCM naming)
+HALT_PIN = 4  # halt by GPIO-4 (BCM naming)
 SYSUP_PIN = 17  # output SYS_UP signal on GPIO-17 (BCM naming)
-CHRG_PIN = 5    # input to detect charging status
-STDBY_PIN = 6   # input to detect standby status
+CHRG_PIN = 5  # input to detect charging status
+STDBY_PIN = 6  # input to detect standby status
 
 # Values
 ALARM_RESET = 80
@@ -143,15 +143,15 @@ class WittyPiException(Exception):
     pass
 
 
-class ScheduleEntry():
+class ScheduleEntry:
     def __init__(
-            self,
-            name: str,
-            start: str,
-            stop: str,
-            location: astral.LocationInfo,
-            tz: datetime.tzinfo = datetime.UTC,
-            **kwargs,
+        self,
+        name: str,
+        start: str,
+        stop: str,
+        location: astral.LocationInfo,
+        tz: datetime.tzinfo = datetime.UTC,
+        **kwargs,
     ):
         self.name = name
         self._start = start
@@ -163,7 +163,9 @@ class ScheduleEntry():
             logger.warning("Got unknown keywords %s, ignoring.", kwargs.keys())
 
         # test if schedule can be evaluated
-        logger.debug("Schedule '%s' loaded, next_start: %s, next_stop: %s", self.name, self.next_stop(), self.next_start())
+        logger.debug(
+            "Schedule '%s' loaded, next_start: %s, next_stop: %s", self.name, self.next_stop(), self.next_start()
+        )
 
     def next_start(self, now: datetime.datetime | None = None) -> datetime.datetime:
         return self.parse_timing(self._start, now=now)
@@ -181,7 +183,6 @@ class ScheduleEntry():
         return self.prev_start(now=now) > self.prev_stop(now=now)
 
     def parse_timing(self, time_str: str, day: int = 0, forward: bool = True, now: datetime.datetime = None):
-
         # initizalize now with datetime.now() if not set
         now = now or datetime.datetime.now(tz=self._tz)
         date = now.date() + datetime.timedelta(days=day)
@@ -206,14 +207,14 @@ class ScheduleEntry():
         if forward:
             if ts <= now:
                 # if timestamp is in the past or now, recurse with day+1
-                return self.parse_timing(time_str, day+1, forward=forward, now=now)
+                return self.parse_timing(time_str, day + 1, forward=forward, now=now)
             else:
                 # return timestamp of the future
                 return ts
         else:
             if ts > now:
                 # if timestamp is in the future, recurse with day-1
-                return self.parse_timing(time_str, day-1, forward=forward, now=now)
+                return self.parse_timing(time_str, day - 1, forward=forward, now=now)
             else:
                 # return timestamp of the past
                 return ts
@@ -262,8 +263,7 @@ class ButtonEntry(ScheduleEntry):
         return f"{self.__class__.__name__}(prev_start={self.prev_start()}, next_stop={self.next_stop()})"
 
 
-class ScheduleConfiguration():
-
+class ScheduleConfiguration:
     def __init__(
         self,
         config: dict,
@@ -291,7 +291,9 @@ class ScheduleConfiguration():
                 logger.debug("Force on is disabled (%s)", config["force_on"])
 
         try:
-            self.button_delay = datetime.timedelta(seconds=pytimeparse.parse(config["button_delay"], granularity="minutes"))
+            self.button_delay = datetime.timedelta(
+                seconds=pytimeparse.parse(config["button_delay"], granularity="minutes")
+            )
         except Exception:
             self.button_delay = None
         logger.debug("Using button delay of %s", self.button_delay)
@@ -312,7 +314,12 @@ class ScheduleConfiguration():
                 logger.warning("No schedules found, setting force_on.")
                 self.force_on = True
 
-        logger.info("ScheduleConfiguration loaded - active: %s, next_shutdown: %s, next_startup: %s", self.active(), self.next_shutdown(), self.next_startup())
+        logger.info(
+            "ScheduleConfiguration loaded - active: %s, next_shutdown: %s, next_startup: %s",
+            self.active(),
+            self.next_shutdown(),
+            self.next_startup(),
+        )
         for entry in self.entries:
             logger.info("%s", entry)
 
@@ -332,7 +339,9 @@ class ScheduleConfiguration():
         try:
             next_ts = now
             while self.active(next_ts):
-                next_ts = min([e.next_stop(next_ts) for e in self.entries if e.next_stop(next_ts) and e.next_stop(next_ts) > now])
+                next_ts = min(
+                    [e.next_stop(next_ts) for e in self.entries if e.next_stop(next_ts) and e.next_stop(next_ts) > now]
+                )
                 logger.debug("Next stop event would be %s, are we active then? %s", next_ts, self.active(next_ts))
 
                 if next_ts - now >= datetime.timedelta(days=1):
@@ -356,7 +365,6 @@ class WittyPi4(object):
         addr: int = I2C_MC_ADDRESS,
         tz=datetime.UTC,
     ):
-
         self._bus = bus or smbus2.SMBus(1, force=True)
         self._addr = addr
         self._tz = tz
@@ -380,15 +388,21 @@ class WittyPi4(object):
 
     @property
     def voltage_in(self) -> float:
-        return self._bus.read_byte_data(self._addr, I2C_VOLTAGE_IN_I) + (self._bus.read_byte_data(self._addr, I2C_VOLTAGE_IN_D) / 100)
+        return self._bus.read_byte_data(self._addr, I2C_VOLTAGE_IN_I) + (
+            self._bus.read_byte_data(self._addr, I2C_VOLTAGE_IN_D) / 100
+        )
 
     @property
     def voltage_out(self) -> float:
-        return self._bus.read_byte_data(self._addr, I2C_VOLTAGE_OUT_I) + (self._bus.read_byte_data(self._addr, I2C_VOLTAGE_OUT_D) / 100)
+        return self._bus.read_byte_data(self._addr, I2C_VOLTAGE_OUT_I) + (
+            self._bus.read_byte_data(self._addr, I2C_VOLTAGE_OUT_D) / 100
+        )
 
     @property
     def current_out(self) -> float:
-        return self._bus.read_byte_data(self._addr, I2C_CURRENT_OUT_I) + (self._bus.read_byte_data(self._addr, I2C_CURRENT_OUT_D) / 100)
+        return self._bus.read_byte_data(self._addr, I2C_CURRENT_OUT_I) + (
+            self._bus.read_byte_data(self._addr, I2C_CURRENT_OUT_D) / 100
+        )
 
     @property
     def watts_out(self) -> float:
@@ -607,9 +621,15 @@ class WittyPi4(object):
         ts = self.rtc_datetime
 
         # if all register are unset, return None
-        if (day == ALARM_RESET) and (weekday == ALARM_RESET) and (hour == ALARM_RESET) and (minute == ALARM_RESET) and (second == ALARM_RESET):
+        if (
+            (day == ALARM_RESET)
+            and (weekday == ALARM_RESET)
+            and (hour == ALARM_RESET)
+            and (minute == ALARM_RESET)
+            and (second == ALARM_RESET)
+        ):
             return None
-        if (day == 0):
+        if day == 0:
             return None
 
         logger.debug("Iterating %s to match day %02i %02i:%02i:%02i", ts, day, hour, minute, second)
@@ -670,7 +690,7 @@ class WittyPi4(object):
             logger.warning("startup time is in the past.")
 
         self.alarm2_day = ts.day
-        self.alarm2_weekday = ALARM_RESET       # ignore weekday in this mode
+        self.alarm2_weekday = ALARM_RESET  # ignore weekday in this mode
         self.alarm2_hour = ts.hour
         self.alarm2_minute = ts.minute
         self.alarm2_second = ts.second
@@ -809,7 +829,7 @@ class WittyPi4(object):
     @rtc_datetime.setter
     def rtc_datetime(self, value: datetime.datetime):
         ts = value.astimezone(self._tz)
-        self._bus.write_byte_data(self._addr, I2C_RTC_YEARS, bin2bcd(ts.year-2000))
+        self._bus.write_byte_data(self._addr, I2C_RTC_YEARS, bin2bcd(ts.year - 2000))
         self._bus.write_byte_data(self._addr, I2C_RTC_MONTHS, bin2bcd(ts.month))
         self._bus.write_byte_data(self._addr, I2C_RTC_WEEKDAYS, bin2bcd(ts.weekday()))
         self._bus.write_byte_data(self._addr, I2C_RTC_DAYS, bin2bcd(ts.day))

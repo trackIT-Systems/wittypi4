@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 
-import logging
-import signal
-import time
-import threading
 import argparse
-import io
 import datetime
-import pathlib
-import yaml
+import io
+import logging
 import os
+import pathlib
+import signal
+import threading
+import time
 
 import smbus2
+import yaml
 
-from . import WittyPi4, ScheduleConfiguration, ActionReason, ButtonEntry, WittyPiException
+from . import ActionReason, ButtonEntry, ScheduleConfiguration, WittyPi4, WittyPiException
 from .__main__ import parser
 
 parser.prog = "wittypid"
 parser.usage = "daemon to configure and handle WittyPi schedules"
-parser.add_argument("-s", "--schedule", type=argparse.FileType('r'), help="ONNX model", default="schedule.yml")
+parser.add_argument("-s", "--schedule", type=argparse.FileType("r"), help="ONNX model", default="schedule.yml")
 
 logger = logging.getLogger(parser.prog)
 
@@ -28,7 +28,7 @@ def fake_hwclock() -> datetime.datetime:
     with path.open(encoding="ascii") as fp:
         data = fp.read()
 
-    ts = datetime.datetime.strptime(data, '%Y-%m-%d %H:%M:%S\n').astimezone(datetime.UTC)
+    ts = datetime.datetime.strptime(data, "%Y-%m-%d %H:%M:%S\n").astimezone(datetime.UTC)
     logger.info("Read fake_hwclock: %s", ts)
     return ts
 
@@ -57,7 +57,9 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
         try:
             # check clock plausibility
             if self.rtc_datetime < fake_hwclock():
-                logger.warning("RTC is implausible (%s). Connect to GPS/internet and wait for timesync", self.rtc_datetime)
+                logger.warning(
+                    "RTC is implausible (%s). Connect to GPS/internet and wait for timesync", self.rtc_datetime
+                )
                 exit(3)
 
             # check RTC and systemclock matching
@@ -102,7 +104,11 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
                 self.set_shutdown_datetime(self.rtc_datetime + datetime.timedelta(seconds=shutdown_delay_s))
 
             # somehow the shutdown alarm fired, and we're still running.
-            elif self.action_reason in [ActionReason.ALARM_SHUTDOWN, ActionReason.LOW_VOLTAGE, ActionReason.OVER_TEMPERATURE]:
+            elif self.action_reason in [
+                ActionReason.ALARM_SHUTDOWN,
+                ActionReason.LOW_VOLTAGE,
+                ActionReason.OVER_TEMPERATURE,
+            ]:
                 logger.warning("Alarm %s fired, shutting down", self.action_reason)
                 os.system("shutdown 0")
 
@@ -111,7 +117,11 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
 
         self.set_shutdown_datetime(None)
         self.set_startup_datetime(sc.next_startup())
-        logger.info("Terminating, set ScheduleConfiguration shutdown: %s, startup: %s", self.get_shutdown_datetime(), self.get_startup_datetime())
+        logger.info(
+            "Terminating, set ScheduleConfiguration shutdown: %s, startup: %s",
+            self.get_shutdown_datetime(),
+            self.get_startup_datetime(),
+        )
         logger.info("Bye from wittypid")
 
 

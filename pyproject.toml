@@ -9,6 +9,7 @@ dependencies = [
     "pytimeparse >=1.1.8",
     "pyyaml >=6.0.1",
 ]
+requires-python = ">=3.10"
 
 [tool.setuptools]
 py-modules = ["wittypi4"]
