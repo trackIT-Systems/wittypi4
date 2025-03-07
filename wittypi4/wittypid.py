@@ -18,7 +18,9 @@ from .__main__ import parser
 
 parser.prog = "wittypid"
 parser.usage = "daemon to configure and handle WittyPi schedules"
-parser.add_argument("-s", "--schedule", type=argparse.FileType("r"), help="ONNX model", default="schedule.yml")
+parser.add_argument(
+    "-s", "--schedule", type=argparse.FileType("r"), help="YML schedule configuration", default="schedule.yml"
+)
 
 logger = logging.getLogger(parser.prog)
 
@@ -53,6 +55,9 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
         # setting default on
         self.default_on = True
         self.default_on_delay = 1
+
+        # setting power cut delay
+        self.power_cut_delay = 10
 
         try:
             # check clock plausibility
