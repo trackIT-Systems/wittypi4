@@ -87,6 +87,12 @@ sudo cp wittypi4.dtbo /boot/firmware/overlays/
 sudo tee -a /boot/firmware/config.txt <<<dtoverlay=wittypi4
 ```
 
+### TxD power cut
+
+WittyPi recogices a the Raspberry Pi's shutdown by monitoring the TxD output. This mostly works reliable, but sometimes leads to a hangup where the Raspberry Pi shutdown, but TxD is still high and power is not cut. 
+
+To make this more reliable a systemd service can be created, that forcefully sets GPIO 14 low (and thereby disables TxD / the serial console). An example service is to be found in `[/etc/wittypid-power.service](/etc/wittypid-power.service)`.
+
 ## Resources
 
 ### Datasheets
