@@ -161,10 +161,15 @@ class ButtonEntry(ScheduleEntry):
         return self.boot_ts
 
     def next_stop(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
-        if self.button_delay:
-            return self.boot_ts + self.button_delay
-        else:
+        if not self.button_delay:
             return None
+        
+        now = now or datetime.datetime.now(tz=self._tz)
+        next_stop = self.boot_ts + self.button_delay
+        if next_stop < now:
+            return None
+        
+        return next_stop
 
     def next_start(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
         return None
@@ -178,7 +183,7 @@ class ButtonEntry(ScheduleEntry):
         if next_stop:
             return next_stop > now
         else:
-            return True
+            return False
 
     def __repr__(self):
         return f"{self.__class__.__name__}(prev_start={self.prev_start()}, next_stop={self.next_stop()})"
