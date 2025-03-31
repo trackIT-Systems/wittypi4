@@ -1,6 +1,7 @@
 import collections.abc
 import datetime
 import enum
+import importlib
 import logging
 import platform
 import time
@@ -10,6 +11,8 @@ import astral.sun
 import pytimeparse
 import smbus2
 from scheduleparse import ScheduleEntry
+
+__version__ = importlib.metadata.version(__name__)
 
 logger = logging.getLogger("wittypi4")
 
@@ -148,8 +151,12 @@ class ButtonEntry(ScheduleEntry):
     def __init__(
         self,
         button_delay: datetime.timedelta | None,
-        tz: datetime.tzinfo = datetime.UTC,
+        tz: datetime.tzinfo = None,
     ):
+        # get local timezone
+        if not tz:
+            tz = datetime.datetime.now().astimezone().tzinfo
+
         self.button_delay = button_delay
         self._tz = tz
 
@@ -163,12 +170,12 @@ class ButtonEntry(ScheduleEntry):
     def next_stop(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
         if not self.button_delay:
             return None
-        
+
         now = now or datetime.datetime.now(tz=self._tz)
         next_stop = self.boot_ts + self.button_delay
         if next_stop < now:
             return None
-        
+
         return next_stop
 
     def next_start(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
@@ -193,8 +200,12 @@ class ScheduleConfiguration:
     def __init__(
         self,
         config: dict,
-        tz: datetime.tzinfo = datetime.UTC,
+        tz: datetime.tzinfo = None,
     ):
+        # get local timezone
+        if not tz:
+            tz = datetime.datetime.now().astimezone().tzinfo
+
         self._tz = tz
 
         logger.debug(config)

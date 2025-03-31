@@ -85,7 +85,7 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
 
         # read schedule configuration
         schedule_raw: dict = yaml.safe_load(self._schedule)
-        sc = ScheduleConfiguration(schedule_raw, self._tz)
+        sc = ScheduleConfiguration(schedule_raw)
 
         if self.action_reason in [ActionReason.BUTTON_CLICK, ActionReason.VOLTAGE_RESTORE]:
             button_entry = ButtonEntry(sc.button_delay)
