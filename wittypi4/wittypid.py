@@ -57,7 +57,7 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
         self.default_on_delay = 1
 
         # setting power cut delay
-        self.power_cut_delay = 15
+        self.power_cut_delay = 30
 
         try:
             # check clock plausibility
