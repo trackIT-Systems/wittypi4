@@ -570,7 +570,7 @@ class WittyPi4(object):
 
     # High level interface for alarms
     def _timer_next_ts(self, day: int, weekday: int, hour: int, minute: int, second: int) -> None | datetime.datetime:
-        ts = self.rtc_datetime
+        ts = self.rtc_datetime.astimezone(self._tz)
 
         # if all register are unset, return None
         if (
@@ -598,7 +598,7 @@ class WittyPi4(object):
         while (day != ts.day) and (day != ALARM_RESET):
             ts += datetime.timedelta(days=1)
 
-        return ts
+        return ts.astimezone()
 
     def set_startup_datetime(self, ts: datetime.datetime | None):
         if ts is None:
@@ -776,7 +776,7 @@ class WittyPi4(object):
             minute=bcd2bin(self._bus.read_byte_data(self._addr, I2C_RTC_MINUTES)),
             second=bcd2bin(self._bus.read_byte_data(self._addr, I2C_RTC_SECONDS)),
             tzinfo=self._tz,
-        )
+        ).astimezone()
 
     @rtc_datetime.setter
     def rtc_datetime(self, value: datetime.datetime):
