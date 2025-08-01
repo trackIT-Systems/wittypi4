@@ -51,16 +51,20 @@ if __name__ == "__main__":
     wp.clear_flags()
 
     # schedule next startup
-    startup = wp.rtc_datetime + datetime.timedelta(seconds=60)
-    logger.warning("Scheduling startup in 60 seconds @%s", startup)
+    startup_s = 20
+    startup = wp.rtc_datetime + datetime.timedelta(seconds=startup_s)
+    logger.warning("Scheduling startup in %s seconds @%s", startup_s, startup)
     wp.set_startup_datetime(startup)
 
     # schedule next shutdown
-    shutdown = wp.rtc_datetime + datetime.timedelta(seconds=10)
-    logger.warning("Scheduling shutdown in 10 seconds @%s", shutdown)
+    shutdown_s = 10
+    shutdown = wp.rtc_datetime + datetime.timedelta(seconds=shutdown_s)
+    logger.warning("Scheduling shutdown in %s seconds @%s", shutdown_s, shutdown)
     wp.set_shutdown_datetime(shutdown)
 
+    logger.info("Power Cut Delay: %s", wp.power_cut_delay)
     wp.power_cut_delay = 30
+    logger.info("Power Cut Delay: %s (newly set)", wp.power_cut_delay)
 
     # debug print info
     logger.info("Next Startup: %s", wp.get_startup_datetime())

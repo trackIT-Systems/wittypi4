@@ -57,7 +57,7 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
         self.default_on_delay = 1
 
         # setting power cut delay
-        self.power_cut_delay = 30
+        self.power_cut_delay = 25
 
         try:
             # check clock plausibility
@@ -106,7 +106,7 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
             # somehow we're here while should't be active, setting shutdown with delay
             if not sc.active(now):
                 logger.info("Shouldn't be active, scheduling shutdown in %ss", shutdown_delay_s)
-                self.set_shutdown_datetime(self.rtc_datetime + datetime.timedelta(seconds=shutdown_delay_s))
+                self.set_shutdown_datetime(now + datetime.timedelta(seconds=shutdown_delay_s))
 
             # somehow the shutdown alarm fired, and we're still running.
             elif self.action_reason in [

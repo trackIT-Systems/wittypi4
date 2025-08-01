@@ -425,7 +425,7 @@ class WittyPi4(object):
 
     @power_cut_delay.setter
     def power_cut_delay(self, value: float):
-        self._bus.write_byte_data(self._addr, I2C_CONF_POWER_CUT_DELAY, int(value * 10))
+        self._bus.write_byte_data(self._addr, I2C_CONF_POWER_CUT_DELAY, max(0, min(int(value * 10), 250)))
 
     @property
     def recovery_voltage(self) -> float:
