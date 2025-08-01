@@ -168,6 +168,12 @@ class ButtonEntry(ScheduleEntry):
         return self.boot_ts
 
     def next_stop(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
+        return None
+
+    def next_start(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
+        return None
+
+    def prev_stop(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
         if not self.button_delay:
             return None
 
@@ -178,17 +184,11 @@ class ButtonEntry(ScheduleEntry):
 
         return next_stop
 
-    def next_start(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
-        return None
-
-    def prev_stop(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
-        return None
-
     def active(self, now: datetime.datetime | None = None) -> bool:
         now = now or datetime.datetime.now(tz=self._tz)
-        next_stop = self.next_stop(now)
-        if next_stop:
-            return next_stop > now
+        prev_stop = self.prev_stop(now)
+        if prev_stop:
+            return prev_stop > now
         else:
             return False
 
@@ -276,9 +276,22 @@ class ScheduleConfiguration:
         try:
             next_ts = now
             while self.active(next_ts):
-                next_ts = min(
-                    [e.next_stop(next_ts) for e in self.entries if e.next_stop(next_ts) and e.next_stop(next_ts) > now]
-                )
+                stop_list = []
+                for e in self.entries:
+                    if e.active(next_ts):
+                        e_stop = e.prev_stop(next_ts)
+                    else:
+                        e_stop = e.next_stop(next_ts)
+
+                    logger.debug("Entry %s (active: %s): %s", e, e.active(next_ts), e_stop)
+                    if e_stop and e_stop > now:
+                        stop_list.append(e_stop)
+
+                if not stop_list:
+                    logger.info("No stop events found, we are online for over 1 day")
+                    return None
+
+                next_ts = min(stop_list)
                 logger.debug("Next stop event would be %s, are we active then? %s", next_ts, self.active(next_ts))
 
                 if next_ts - now >= datetime.timedelta(days=1):
