@@ -30,7 +30,7 @@ def fake_hwclock() -> datetime.datetime:
     with path.open(encoding="ascii") as fp:
         data = fp.read()
 
-    ts = datetime.datetime.strptime(data, "%Y-%m-%d %H:%M:%S\n").astimezone(datetime.UTC)
+    ts = datetime.datetime.strptime(data, "%Y-%m-%d %H:%M:%S\n").replace(tzinfo=datetime.timezone.utc).astimezone()
     logger.info("Read fake_hwclock: %s", ts)
     return ts
 
