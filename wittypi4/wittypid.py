@@ -35,6 +35,51 @@ def fake_hwclock() -> datetime.datetime:
     return ts
 
 
+def systemd_timesync_clock() -> datetime.datetime:
+    # get last modification date of /var/lib/systemd/timesync/clock
+    path = pathlib.Path("/var/lib/systemd/timesync/clock")
+    ts = datetime.datetime.fromtimestamp(path.stat().st_mtime).astimezone()
+    logger.info("Read systemd_timesync_clock: %s", ts)
+    return ts
+
+
+def chrony_drift_clock() -> datetime.datetime:
+    # get last modification date of /var/lib/chrony/chrony.drift
+    path = pathlib.Path("/var/lib/chrony/chrony.drift")
+    ts = datetime.datetime.fromtimestamp(path.stat().st_mtime).astimezone()
+    logger.info("Read chrony_drift_clock: %s", ts)
+    return ts
+
+
+def last_known_time() -> datetime.datetime:
+    # read all three clocks and return the most recent one
+    # note: files might not exist, which will throw an exception that needs to be caught
+    clocks = []
+
+    # Try to read fake_hwclock
+    try:
+        clocks.append(fake_hwclock())
+    except (FileNotFoundError, OSError) as e:
+        logger.debug("Could not read fake_hwclock: %s", e)
+
+    # Try to read systemd_timesync_clock
+    try:
+        clocks.append(systemd_timesync_clock())
+    except (FileNotFoundError, OSError) as e:
+        logger.debug("Could not read systemd_timesync_clock: %s", e)
+
+    # Try to read chrony_drift_clock
+    try:
+        clocks.append(chrony_drift_clock())
+    except (FileNotFoundError, OSError) as e:
+        logger.debug("Could not read chrony_drift_clock: %s", e)
+
+    if not clocks:
+        raise RuntimeError("No clock sources available - all clock files are missing")
+
+    return max(clocks)
+
+
 class WittyPi4Daemon(WittyPi4, threading.Thread):
     def __init__(self, schedule: io.TextIOWrapper, *args, **kwargs):
         self._stop = threading.Event()
@@ -61,7 +106,7 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
 
         try:
             # check clock plausibility
-            if self.rtc_datetime < fake_hwclock():
+            if self.rtc_datetime < last_known_time():
                 logger.warning(
                     "RTC is implausible (%s). Connect to GPS/internet and wait for timesync", self.rtc_datetime
                 )
