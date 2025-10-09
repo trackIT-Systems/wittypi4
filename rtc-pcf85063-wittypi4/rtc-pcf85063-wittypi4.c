@@ -602,14 +602,19 @@ static int pcf85063_probe(struct i2c_client *client)
 
 	i2c_set_clientdata(client, pcf85063);
 	
-	dev_info(&client->dev, "reboot bugfix: sending SW reset\n");
-	err = regmap_write(pcf85063->regmap, PCF85063_REG_CTRL1, PCF85063_REG_CTRL1_SWR);
-		dev_dbg(&client->dev, "SW reset failed, trying to continue\n");
-
-	err = regmap_read(pcf85063->regmap, PCF85063_REG_SC, &tmp);
-	if (err) {
-		dev_err(&client->dev, "RTC chip is not present\n");
-		return err;
+	for (int try = 0; try < 10; try++) {
+		err = regmap_read(pcf85063->regmap, PCF85063_REG_SC, &tmp);
+		if (err) {
+			if (try < 10) {
+				dev_err(&client->dev, "RTC error %d, retrying %d of 10\n", err, try);
+				msleep(100);
+			} else {
+				dev_err(&client->dev, "RTC chip is not present after 10 retries\n");
+				return err;
+			}
+		} else {
+			break;
+		}
 	}
 
 	pcf85063->rtc = devm_rtc_allocate_device(&client->dev);
