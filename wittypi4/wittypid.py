@@ -120,9 +120,9 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
             # set clock synced
             sync_path = pathlib.Path("/run/systemd/timesync/synchronized")
             logger.info("RTC is valid, setting %s", sync_path)
-            while not sync_path.parent.exists():
-                logger.info("Waiting for /run/systemd/timesync/...")
-                time.sleep(1)
+            if not sync_path.parent.exists():
+                logger.info("Creating for /run/systemd/timesync/...")
+                sync_path.parent.mkdir(parents=True, exist_ok=True)
             sync_path.touch()
         except ValueError:
             logger.error("RTC is unset. Connect to GPS/internet, and wait for timesync")
