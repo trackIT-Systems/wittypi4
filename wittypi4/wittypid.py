@@ -132,7 +132,11 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
         schedule_raw: dict = yaml.safe_load(self._schedule)
         sc = ScheduleConfiguration(schedule_raw)
 
-        if self.action_reason in [ActionReason.BUTTON_CLICK, ActionReason.VOLTAGE_RESTORE]:
+        if self.action_reason in [
+            ActionReason.BUTTON_CLICK,
+            ActionReason.VOLTAGE_RESTORE,
+            ActionReason.POWER_CONNECTED,
+        ]:
             button_entry = ButtonEntry(sc.button_delay)
             logger.info("Started by %s, adding %s", self.action_reason, button_entry)
             sc.entries.append(button_entry)
