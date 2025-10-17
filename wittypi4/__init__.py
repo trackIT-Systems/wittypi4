@@ -216,6 +216,63 @@ class WittyPiException(Exception):
     pass
 
 
+def _parse_geolocation_file(path: str = "/etc/geolocation") -> tuple[float, float] | None:
+    """Parse geoclue-2.0 format static location file.
+
+    Reads location from a geoclue-2.0 compatible file with format:
+    - Line 1: Latitude (float, positive=north, negative=south)
+    - Line 2: Longitude (float, positive=east, negative=west)
+    - Line 3: Altitude (optional, ignored)
+    - Line 4: Accuracy radius (optional, ignored)
+
+    Comments (starting with #) and whitespace are ignored.
+
+    Args:
+        path: Path to geolocation file (default: /etc/geolocation)
+
+    Returns:
+        Tuple of (latitude, longitude) or None if file doesn't exist or is invalid
+    """
+    try:
+        with open(path, "r") as f:
+            lines = []
+            for line in f:
+                # Remove comments and strip whitespace
+                line = line.split("#", 1)[0].strip()
+                # Skip empty lines
+                if line:
+                    lines.append(line)
+
+            # Need at least 2 lines for lat/lon
+            if len(lines) < 2:
+                logger.warning("Geolocation file %s has insufficient data (need lat/lon)", path)
+                return None
+
+            lat = float(lines[0])
+            lon = float(lines[1])
+
+            # Basic validation
+            if not (-90 <= lat <= 90):
+                logger.warning("Invalid latitude in %s: %f (must be -90 to 90)", path, lat)
+                return None
+            if not (-180 <= lon <= 180):
+                logger.warning("Invalid longitude in %s: %f (must be -180 to 180)", path, lon)
+                return None
+
+            logger.debug("Parsed geolocation from %s: lat=%f, lon=%f", path, lat, lon)
+            return (lat, lon)
+
+    except FileNotFoundError:
+        logger.debug("Geolocation file %s not found", path)
+        return None
+    except (ValueError, IndexError) as e:
+        logger.warning("Failed to parse geolocation file %s: %s", path, e)
+        return None
+    except Exception as e:
+        logger.warning("Error reading geolocation file %s: %s", path, e)
+        return None
+
+
 class ButtonEntry(ScheduleEntry):
     """Schedule entry for manual button-triggered startups.
 
@@ -293,6 +350,12 @@ class ScheduleConfiguration:
     - Force-on mode to disable automatic shutdowns
     - Button delay for manual power-ons
 
+    Location Configuration:
+        Location coordinates for astronomical calculations are obtained in order:
+        1. From config dict (lat/lon keys)
+        2. From /etc/geolocation file (geoclue-2.0 format)
+        If neither is available, relative schedules (sunrise/sunset) are disabled.
+
     Args:
         config: Dictionary containing schedule configuration with keys:
             - lat/lon: Location coordinates for astronomical calculations (optional)
@@ -334,13 +397,23 @@ class ScheduleConfiguration:
         logger.debug(config)
 
         # parsing location information
-        self._location: astral.LocationInfo | None
+        self._location: astral.LocationInfo | None = None
+
+        # First, try to get location from config
         if ("lat" in config) and ("lon" in config):
             self._location = astral.LocationInfo(platform.node(), "", tz, config["lat"], config["lon"])
-            logger.debug("Times relative to %s", self._location)
+            logger.info("Times relative to %s (from config)", self._location)
+        # Fall back to /etc/geolocation file
         else:
-            self._location = None
-            logger.warning("Schedule doesn't contain lat/lon information, relative schedules are disabled.")
+            geoloc = _parse_geolocation_file()
+            if geoloc:
+                self._location = astral.LocationInfo(platform.node(), "", tz, geoloc[0], geoloc[1])
+                logger.info("Times relative to %s (from /etc/geolocation)", self._location)
+
+        if not self._location:
+            logger.warning(
+                "No location configured (neither lat/lon in config nor /etc/geolocation), relative schedules are disabled."
+            )
 
         self.force_on: bool = False
         if "force_on" in config:
