@@ -93,6 +93,65 @@ WittyPi recogices a the Raspberry Pi's shutdown by monitoring the TxD output. Th
 
 To make this more reliable a systemd service can be created, that forcefully sets GPIO 14 low (and thereby disables TxD / the serial console). An example service is to be found in `[/etc/wittypid-power.service](/etc/wittypid-power.service)`.
 
+# Python API
+
+This repository includes a Python library for programmatic control of the WittyPi 4.
+
+## Installation
+
+Install the library using pip or pdm:
+
+```bash
+# Using pip
+pip install -e .
+
+# Using pdm
+pdm install
+```
+
+## Quick Example
+
+```python
+import smbus2
+from wittypi4 import WittyPi4
+import datetime
+
+# Initialize WittyPi 4
+bus = smbus2.SMBus(1, force=True)
+wp = WittyPi4(bus)
+
+# Read hardware status
+print(f"Input: {wp.voltage_in}V, Output: {wp.voltage_out}V @ {wp.current_out}A")
+print(f"Temperature: {wp.lm75b_temperature}°C")
+print(f"RTC Time: {wp.rtc_datetime}")
+
+# Schedule next startup in 1 hour
+wp.set_startup_datetime(datetime.datetime.now() + datetime.timedelta(hours=1))
+```
+
+## Running the Daemon
+
+The `wittypid` daemon manages schedules automatically:
+
+```bash
+# Run with default schedule.yml
+wittypid
+
+# Run with custom schedule file
+wittypid -s /path/to/schedule.yml
+
+# Verbose output
+wittypid -vv
+```
+
+For production use, install as a systemd service (see `etc/wittypid-power.service`).
+
+## Documentation
+
+For complete API reference, examples, and advanced usage, see:
+- [Python API Documentation](docs/API.md) - Complete API reference for developers
+- [schedule.yml](schedule.yml) - Example schedule configuration
+
 ## Resources
 
 ### Datasheets

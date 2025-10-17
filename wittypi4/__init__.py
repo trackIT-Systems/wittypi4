@@ -1,3 +1,31 @@
+"""WittyPi 4 Python Library.
+
+This module provides a Python interface for controlling and monitoring the WittyPi 4
+power management HAT for Raspberry Pi. It supports:
+
+- Real-time clock (RTC) operations with PCF85063A
+- Scheduled startup and shutdown via alarms
+- Voltage, current, and temperature monitoring
+- Schedule-based power management with sunrise/sunset support
+- Low voltage protection and power mode management
+
+Main Classes:
+    WittyPi4: Primary interface to WittyPi 4 hardware
+    ScheduleConfiguration: Manages scheduling logic for startup/shutdown
+    ActionReason: Enum of possible startup/shutdown reasons
+    ButtonEntry: Handles manual power-on scheduling
+
+Example:
+    Basic usage to read status and set alarms:
+
+    >>> import smbus2
+    >>> from wittypi4 import WittyPi4
+    >>> bus = smbus2.SMBus(1, force=True)
+    >>> wp = WittyPi4(bus)
+    >>> print(wp.voltage_in, wp.voltage_out, wp.current_out)
+    >>> wp.set_startup_datetime(datetime.datetime.now() + datetime.timedelta(hours=1))
+"""
+
 import collections.abc
 import datetime
 import enum
@@ -112,14 +140,49 @@ ALARM_RESET = 80
 
 
 def bcd2bin(value):
+    """Convert Binary-Coded Decimal (BCD) to binary integer.
+
+    Args:
+        value: BCD encoded value (e.g., 0x23 represents decimal 23)
+
+    Returns:
+        Integer representation of the BCD value
+    """
     return value - 6 * (value >> 4)
 
 
 def bin2bcd(value):
+    """Convert binary integer to Binary-Coded Decimal (BCD).
+
+    Args:
+        value: Integer value to convert (0-99)
+
+    Returns:
+        BCD encoded value (e.g., 23 becomes 0x23)
+    """
     return value + 6 * (value // 10)
 
 
 class ActionReason(enum.Enum):
+    """Enumeration of possible reasons for WittyPi 4 power state changes.
+
+    These values indicate why the Raspberry Pi was powered on or off, and can be
+    read from the WittyPi4.action_reason property.
+
+    Attributes:
+        ALARM_STARTUP: Scheduled startup via Alarm 1
+        ALARM_SHUTDOWN: Scheduled shutdown via Alarm 2
+        BUTTON_CLICK: Manual power button press
+        LOW_VOLTAGE: Shutdown triggered by low input voltage
+        VOLTAGE_RESTORE: Startup after voltage restored above threshold
+        OVER_TEMPERATURE: Shutdown triggered by high temperature
+        BELOW_TEMPERATURE: Shutdown triggered by low temperature
+        ALARM_STARTUP_DELAYED: Startup alarm with configured delay
+        POWER_CONNECTED: Power source connected
+        REBOOT: System reboot
+        GUARANTEED_WAKE: Startup via guaranteed wake feature
+    """
+
     ALARM_STARTUP = 0x01
     ALARM_SHUTDOWN = 0x02
     BUTTON_CLICK = 0x03
@@ -144,10 +207,33 @@ class ActionReason(enum.Enum):
 
 
 class WittyPiException(Exception):
+    """Exception raised for WittyPi 4 hardware communication errors.
+
+    This exception is raised when there are issues communicating with the
+    WittyPi 4 hardware, such as I2C errors or unexpected firmware responses.
+    """
+
     pass
 
 
 class ButtonEntry(ScheduleEntry):
+    """Schedule entry for manual button-triggered startups.
+
+    This class represents a schedule entry created when the WittyPi is powered on
+    manually via button press, voltage restore, or power connection. It allows the
+    system to stay on for a configurable delay period before the next scheduled
+    shutdown.
+
+    Args:
+        button_delay: How long to keep system on after manual power-on.
+                     None disables automatic shutdown after button press.
+        tz: Timezone for schedule calculations. Defaults to system local timezone.
+
+    Attributes:
+        button_delay: Duration to stay powered on after manual start
+        boot_ts: Timestamp when the system booted
+    """
+
     def __init__(
         self,
         button_delay: datetime.timedelta | None,
@@ -197,6 +283,43 @@ class ButtonEntry(ScheduleEntry):
 
 
 class ScheduleConfiguration:
+    """Manages startup/shutdown scheduling based on time and astronomical events.
+
+    This class parses schedule configuration from YAML/dict format and calculates
+    when the system should be powered on or off. Supports:
+    - Absolute time schedules (e.g., "10:00" to "13:00")
+    - Relative to sunrise/sunset (e.g., "sunrise-01:00" to "sunset+00:30")
+    - Multiple overlapping schedule entries
+    - Force-on mode to disable automatic shutdowns
+    - Button delay for manual power-ons
+
+    Args:
+        config: Dictionary containing schedule configuration with keys:
+            - lat/lon: Location coordinates for astronomical calculations (optional)
+            - force_on: If True, system stays on indefinitely (optional, default False)
+            - button_delay: Duration string (e.g., "00:30") to stay on after button press
+            - schedule: List of schedule entry dicts with 'name', 'start', 'stop'
+        tz: Timezone for schedule calculations. Defaults to system local timezone.
+
+    Attributes:
+        force_on: If True, system never shuts down automatically
+        button_delay: Timedelta to stay on after manual power-on
+        entries: List of ScheduleEntry objects
+
+    Example:
+        >>> config = {
+        ...     'lat': 50.85318, 'lon': 8.78735,
+        ...     'force_on': False,
+        ...     'button_delay': '00:30',
+        ...     'schedule': [
+        ...         {'name': 'morning', 'start': 'sunrise-01:00', 'stop': '12:00'},
+        ...         {'name': 'evening', 'start': '18:00', 'stop': 'sunset+01:00'}
+        ...     ]
+        ... }
+        >>> sc = ScheduleConfiguration(config)
+        >>> print(sc.next_startup())
+    """
+
     def __init__(
         self,
         config: dict,
@@ -261,6 +384,14 @@ class ScheduleConfiguration:
             logger.info("%s", entry)
 
     def next_startup(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
+        """Calculate the next scheduled startup time.
+
+        Args:
+            now: Reference time for calculation. Defaults to current time.
+
+        Returns:
+            Datetime of next scheduled startup, or None if no startup scheduled.
+        """
         now = now or datetime.datetime.now(tz=self._tz)
         # as all next_starts are in the future, pick the most recent start
         try:
@@ -269,6 +400,18 @@ class ScheduleConfiguration:
             return None
 
     def next_shutdown(self, now: datetime.datetime | None = None) -> datetime.datetime | None:
+        """Calculate the next scheduled shutdown time.
+
+        Considers all active schedule entries and finds the next time when no
+        schedule entry is active (i.e., system should shut down).
+
+        Args:
+            now: Reference time for calculation. Defaults to current time.
+
+        Returns:
+            Datetime of next scheduled shutdown, or None if force_on is enabled
+            or no shutdown needed in next 24 hours.
+        """
         now = now or datetime.datetime.now(tz=self._tz)
         if self.force_on:
             return None
@@ -304,11 +447,57 @@ class ScheduleConfiguration:
             return None
 
     def active(self, now: datetime.datetime | None = None):
+        """Check if system should be powered on at given time.
+
+        Args:
+            now: Time to check. Defaults to current time.
+
+        Returns:
+            True if system should be on (force_on or any schedule entry active),
+            False otherwise.
+        """
         now = now or datetime.datetime.now(tz=self._tz)
         return self.force_on or any([e.active(now) for e in self.entries])
 
 
 class WittyPi4(object):
+    """Main interface to WittyPi 4 power management hardware.
+
+    This class provides complete access to WittyPi 4 functionality including:
+    - Hardware monitoring (voltage, current, temperature)
+    - RTC operations (read/write time, alarms)
+    - Power management (startup/shutdown scheduling)
+    - Configuration (voltage thresholds, delays, power modes)
+
+    The WittyPi 4 is accessed via I2C and includes:
+    - Microcontroller with firmware v0x26
+    - Real-time clock (PCF85063A)
+    - Temperature sensor (LM75B)
+    - Voltage/current monitoring
+    - Configurable alarms for automatic power control
+
+    Args:
+        bus: SMBus instance for I2C communication. If None, creates SMBus(1, force=True)
+        addr: I2C address of WittyPi microcontroller (default: 0x08)
+        tz: Timezone for RTC operations (default: UTC)
+
+    Raises:
+        WittyPiException: If device not found or firmware ID doesn't match (expected 0x26)
+
+    Example:
+        >>> import smbus2
+        >>> from wittypi4 import WittyPi4
+        >>> bus = smbus2.SMBus(1, force=True)
+        >>> wp = WittyPi4(bus)
+        >>> print(f"Input: {wp.voltage_in}V, Output: {wp.voltage_out}V @ {wp.current_out}A")
+        >>> print(f"Temperature: {wp.lm75b_temperature}°C")
+        >>> print(f"RTC Time: {wp.rtc_datetime}")
+        >>>
+        >>> # Schedule startup in 1 hour
+        >>> import datetime
+        >>> wp.set_startup_datetime(datetime.datetime.now() + datetime.timedelta(hours=1))
+    """
+
     def __init__(
         self,
         bus: smbus2.SMBus | None = None,
@@ -601,6 +790,18 @@ class WittyPi4(object):
         return ts.astimezone()
 
     def set_startup_datetime(self, ts: datetime.datetime | None):
+        """Set the scheduled startup time (Alarm 1).
+
+        Configures when the WittyPi should power on the Raspberry Pi. Pass None
+        to disable the startup alarm.
+
+        Args:
+            ts: Datetime to power on, or None to disable alarm.
+                Will be converted to the configured timezone.
+
+        Note:
+            Logs a warning if the specified time is in the past.
+        """
         if ts is None:
             self.alarm1_day = ALARM_RESET
             self.alarm1_weekday = ALARM_RESET
@@ -620,6 +821,11 @@ class WittyPi4(object):
         self.alarm1_second = ts.second
 
     def get_startup_datetime(self) -> datetime.datetime | None:
+        """Get the currently configured startup time (Alarm 1).
+
+        Returns:
+            Datetime when next startup is scheduled, or None if alarm disabled.
+        """
         return self._timer_next_ts(
             day=self.alarm1_day,
             weekday=self.alarm1_weekday,
@@ -629,6 +835,18 @@ class WittyPi4(object):
         )
 
     def set_shutdown_datetime(self, ts: datetime.datetime | None):
+        """Set the scheduled shutdown time (Alarm 2).
+
+        Configures when the WittyPi should initiate shutdown of the Raspberry Pi.
+        Pass None to disable the shutdown alarm.
+
+        Args:
+            ts: Datetime to shut down, or None to disable alarm.
+                Will be converted to the configured timezone.
+
+        Note:
+            Logs a warning if the specified time is in the past.
+        """
         if ts is None:
             self.alarm2_day = ALARM_RESET
             self.alarm2_weekday = ALARM_RESET
@@ -648,6 +866,11 @@ class WittyPi4(object):
         self.alarm2_second = ts.second
 
     def get_shutdown_datetime(self) -> datetime.datetime | None:
+        """Get the currently configured shutdown time (Alarm 2).
+
+        Returns:
+            Datetime when next shutdown is scheduled, or None if alarm disabled.
+        """
         return self._timer_next_ts(
             day=self.alarm2_day,
             weekday=self.alarm2_weekday,
@@ -803,14 +1026,36 @@ class WittyPi4(object):
         self._bus.write_byte_data(self._addr, I2C_RTC_CTRL2, ctrl2_value)
 
     def clear_flags(self):
+        """Clear all alarm flags.
+
+        Resets RTC control register alarm flag and both WittyPi alarm flags.
+        Should be called after boot to acknowledge alarm triggers.
+        """
         self.rtc_ctrl2_clear_alarm()
         self.alarm1_flag = False
         self.alarm2_flag = False
 
     def rtc_sysclock_match(self, threshold=datetime.timedelta(seconds=2)) -> bool:
+        """Check if RTC time matches system clock within threshold.
+
+        Useful for verifying that RTC and system time are synchronized,
+        which is important for reliable scheduling.
+
+        Args:
+            threshold: Maximum allowed time difference (default: 2 seconds)
+
+        Returns:
+            True if RTC and system clock are within threshold, False otherwise.
+        """
         return abs(self.rtc_datetime - datetime.datetime.now(tz=self._tz)) < threshold
 
     def dump_config(self) -> dict:
+        """Dump all readable configuration values.
+
+        Returns:
+            Dictionary with all non-private, non-callable attributes and their values.
+            Useful for debugging and configuration backup.
+        """
         return {
             prop: getattr(self, prop)
             for prop in dir(self)
@@ -818,6 +1063,18 @@ class WittyPi4(object):
         }
 
     def get_status(self) -> dict[str, float | int]:
+        """Get key hardware status information.
+
+        Returns:
+            Dictionary containing:
+                - Id: Firmware ID (should be 0x26)
+                - Input Voltage (V): Supply voltage
+                - Output Voltage (V): Output to Raspberry Pi
+                - Output Current (A): Current draw
+                - Power Mode: LDO mode (bool)
+                - Revision: Firmware revision number
+                - Temperature (°C): Onboard temperature sensor reading
+        """
         return {
             "Id": self.firmware_id,
             "Input Voltage (V)": self.voltage_in,

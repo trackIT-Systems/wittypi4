@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+"""WittyPi 4 Daemon - Automated schedule management service.
+
+This daemon runs as a system service to automatically manage WittyPi 4 startup
+and shutdown schedules. It:
+- Validates RTC time against known system time sources
+- Loads schedule configuration from YAML file
+- Continuously updates startup/shutdown alarms based on schedule
+- Handles manual power-on events with configurable delay
+- Responds to SIGTERM/SIGINT for graceful shutdown
+
+The daemon should be run as a systemd service for automatic startup.
+"""
 
 import argparse
 import datetime
@@ -26,6 +38,17 @@ logger = logging.getLogger(parser.prog)
 
 
 def fake_hwclock() -> datetime.datetime:
+    """Read time from fake-hwclock timestamp file.
+
+    The fake-hwclock package saves system time to a file on shutdown,
+    allowing restoration on systems without battery-backed RTC.
+
+    Returns:
+        Datetime read from /etc/fake-hwclock.data
+
+    Raises:
+        FileNotFoundError: If fake-hwclock.data doesn't exist
+    """
     path = pathlib.Path("/etc/fake-hwclock.data")
     with path.open(encoding="ascii") as fp:
         data = fp.read()
@@ -36,6 +59,17 @@ def fake_hwclock() -> datetime.datetime:
 
 
 def systemd_timesync_clock() -> datetime.datetime:
+    """Read last time synchronization from systemd-timesyncd.
+
+    Uses modification time of systemd's timesync clock file to determine
+    when NTP last synchronized the system clock.
+
+    Returns:
+        Datetime of last systemd timesync update
+
+    Raises:
+        FileNotFoundError: If timesync clock file doesn't exist
+    """
     # get last modification date of /var/lib/systemd/timesync/clock
     path = pathlib.Path("/var/lib/systemd/timesync/clock")
     ts = datetime.datetime.fromtimestamp(path.stat().st_mtime).astimezone()
@@ -44,6 +78,17 @@ def systemd_timesync_clock() -> datetime.datetime:
 
 
 def chrony_drift_clock() -> datetime.datetime:
+    """Read last time synchronization from chrony.
+
+    Uses modification time of chrony's drift file to determine when chrony
+    last updated the system clock.
+
+    Returns:
+        Datetime of last chrony drift file update
+
+    Raises:
+        FileNotFoundError: If chrony drift file doesn't exist
+    """
     # get last modification date of /var/lib/chrony/chrony.drift
     path = pathlib.Path("/var/lib/chrony/chrony.drift")
     ts = datetime.datetime.fromtimestamp(path.stat().st_mtime).astimezone()
@@ -52,6 +97,19 @@ def chrony_drift_clock() -> datetime.datetime:
 
 
 def last_known_time() -> datetime.datetime:
+    """Determine the most recent plausible system time from available sources.
+
+    Checks multiple time sources in order to validate RTC time:
+    1. fake-hwclock (if available)
+    2. systemd-timesyncd (if available)
+    3. chrony (if available)
+
+    Returns:
+        Most recent timestamp from available clock sources
+
+    Raises:
+        RuntimeError: If no clock source files are available
+    """
     # read all three clocks and return the most recent one
     # note: files might not exist, which will throw an exception that needs to be caught
     clocks = []
@@ -81,16 +139,45 @@ def last_known_time() -> datetime.datetime:
 
 
 class WittyPi4Daemon(WittyPi4, threading.Thread):
+    """Daemon thread for managing WittyPi 4 schedules automatically.
+
+    This class extends WittyPi4 with daemon functionality:
+    - Runs as a background thread
+    - Validates RTC time on startup
+    - Loads and applies schedule configuration
+    - Continuously updates alarms based on schedule
+    - Handles manual power-on with button delay
+    - Responds to SIGTERM/SIGINT for graceful shutdown
+
+    Args:
+        schedule: Open file handle to YAML schedule configuration
+        *args: Additional arguments passed to WittyPi4 constructor
+        **kwargs: Additional keyword arguments passed to WittyPi4 constructor
+    """
+
     def __init__(self, schedule: io.TextIOWrapper, *args, **kwargs):
         self._stop = threading.Event()
         self._schedule = schedule
         super().__init__(*args, **kwargs)
 
     def terminate(self, sig):
+        """Handle termination signals gracefully.
+
+        Args:
+            sig: Signal number received (SIGTERM or SIGINT)
+        """
         logger.warning("Caught %s, terminating.", signal.Signals(sig).name)
         self._stop.set()
 
     def run(self):
+        """Main daemon loop.
+
+        Performs startup validation, loads schedule configuration, and continuously
+        updates startup/shutdown alarms. Runs until terminated by signal.
+
+        Exit codes:
+            3: RTC time validation failed (implausible time or not synchronized)
+        """
         signal.signal(signal.SIGINT, lambda sig, _: self.terminate(sig))
         signal.signal(signal.SIGTERM, lambda sig, _: self.terminate(sig))
 
@@ -180,6 +267,15 @@ class WittyPi4Daemon(WittyPi4, threading.Thread):
 
 
 def main():
+    """Entry point for wittypid daemon.
+
+    Parses command-line arguments, initializes logging, connects to WittyPi 4
+    hardware, and starts the daemon loop.
+
+    Exit codes:
+        1: Failed to connect to WittyPi hardware
+        3: RTC validation failed (set by daemon.run())
+    """
     args = parser.parse_args()
 
     # configure logging
