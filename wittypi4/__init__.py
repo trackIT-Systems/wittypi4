@@ -183,6 +183,7 @@ class ActionReason(enum.Enum):
         GUARANTEED_WAKE: Startup via guaranteed wake feature
     """
 
+    REASON_NA = 0x00
     ALARM_STARTUP = 0x01
     ALARM_SHUTDOWN = 0x02
     BUTTON_CLICK = 0x03
