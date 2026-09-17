@@ -16,7 +16,7 @@
 			#size-cells = <0>;
 
 			rtc@8 {
-				compatible = "nxp,pcf85063wp";
+				compatible = "uugear,wittypi4-rtc-proxy", "nxp,pcf85063wp";
 				reg = <0x08>;
 			};
 		};

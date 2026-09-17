@@ -1,8 +1,12 @@
 config RTC_DRV_PCF85063_WITTYPI4
-	tristate "NXP PCF85063 WITTYPI4"
-	select REGMAP_I2C
+	tristate "Witty Pi 4 PCF85063 I2C register-window proxy"
 	help
-	  If you say yes here you get support for the PCF85063 RTC chip on the WittyPi 4
+	  I2C proxy for the PCF85063 RTC on Witty Pi 4. The on-board MCU
+	  exposes the RTC registers at a fixed offset and only accepts
+	  single-byte transfers. This driver presents a nested I2C adapter
+	  so the in-tree rtc-pcf85063 driver can bind as usual.
+
+	  Requires CONFIG_RTC_DRV_PCF85063 (module rtc-pcf85063).
 
 	  This driver can also be built as a module. If so, the module
 	  will be called rtc-pcf85063-wittypi4.

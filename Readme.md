@@ -32,37 +32,27 @@ dtoverlay=gpio-led,gpio=17,label=sysup,trigger=heartbeat
 
 ## Real Time Clock (RTC) Linux Driver
 
-In order to use the real time clock in linux, a kernel module shall be loaded. While there exists an implementation of PCF85063A in the mainline kernel, it doesn't allow to be loaded with shifted register adresses. The linux `regmap` hardware abstraction allows however allows this modifications in a convenient fashion using the [`reg_base`](https://elixir.bootlin.com/linux/latest/source/include/linux/regmap.h#L260) property; *Value to be added to every register address before performing any operation.*
+Witty Pi 4 exposes the PCF85063 through the MCU at I2C address `0x08`, with RTC registers windowed at offset `0x36`. The MCU also rejects bulk I2C transfers (bulk reads come back as `0xff`).
 
-The linux driver for PCF85063A was forked and adapted to the WittyPi 4 shifted registers. Debugging the driver it became obvious, that the WittyPi interface doesn't support bulk reads and writes, an i2c feature, only returning `0xff` for the respective reads.. Again `regmap` allows to disable these type of reads. 
+This repository does **not** fork `rtc-pcf85063`. Module `rtc-pcf85063-wittypi4` is a nested I2C adapter that:
 
-In addition to this alarms should be disabled, as they are used by the WittyPi itself.
+- adds `0x36` to the register byte and forwards to the MCU at `0x08`
+- splits bulk / combined transfers into single-byte accesses
+- retries NAK / MCU-not-ready a few times on first access
+- instantiates a child client (`pcf85063a` at virtual address `0x51`) for the **in-tree** `rtc-pcf85063` driver
 
-The device configuration for an adapted driver looks like this:
+`CONFIG_RTC_DRV_PCF85063` (module `rtc-pcf85063`) must be enabled. The overlay does not wire an RTC IRQ, so kernel alarms stay off (the MCU uses the alarm itself).
 
-```c
-	[PCF85063A_WITTYPI] = {
-		.regmap = {
-			.reg_bits = 8,
-			.val_bits = 8,
-			.max_register = 0x11,
-			.reg_base = 0x36,
-			.use_single_read = true,
-			.use_single_write = true,
-		},
-		.has_alarms = 0,
-	},
-```
-
+The overlay compatible list is `"uugear,wittypi4-rtc-proxy", "nxp,pcf85063wp"` so existing `nxp,pcf85063wp` nodes still bind.
 ### Compile & Install module
 
 The module can either be compiled using the Makefile, i.e. `make; sudo make install` or via dkms:
 
 ```bash
-# copy source files
-sudo cp -R /home/pi/wittypi4 /usr/src/wittypi4-6.6.y
+# copy driver source files
+sudo cp -R /home/pi/wittypi4/rtc-pcf85063-wittypi4 /usr/src/rtc-pcf85063-wittypi4-1.0
 # install & compile using dkms
-sudo dkms install wittypi4/6.6.y
+sudo dkms install rtc-pcf85063-wittypi4/1.0
 ```
 
 ### Device Tree Overlay / Raspberry Pi

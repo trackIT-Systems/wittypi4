@@ -10,6 +10,7 @@ all:
 	@echo "Name: $(MOD_NAME)"
 
 obj-$(RTC_DRV_PCF85063_WITTYPI4) := $(MOD_NAME).o
+obj-m ?= $(MOD_NAME).o
 
 else
 # external module build
