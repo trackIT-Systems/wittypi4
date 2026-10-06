@@ -38,7 +38,7 @@ import astral
 import astral.sun
 import pytimeparse
 import smbus2
-from scheduleparse import ScheduleEntry
+from scheduleparse import ScheduleEntry, local_tz
 
 __version__ = importlib.metadata.version(__name__)
 
@@ -297,9 +297,8 @@ class ButtonEntry(ScheduleEntry):
         button_delay: datetime.timedelta | None,
         tz: datetime.tzinfo = None,
     ):
-        # get local timezone
         if not tz:
-            tz = datetime.datetime.now().astimezone().tzinfo
+            tz = local_tz()
 
         self.button_delay = button_delay
         self._tz = tz
@@ -389,9 +388,8 @@ class ScheduleConfiguration:
         config: dict,
         tz: datetime.tzinfo = None,
     ):
-        # get local timezone
         if not tz:
-            tz = datetime.datetime.now().astimezone().tzinfo
+            tz = local_tz()
 
         self._tz = tz
 
