@@ -197,11 +197,10 @@ class ActionReason(enum.Enum):
     GUARANTEED_WAKE = 0x0C
 
     @classmethod
-    def _missing_(cls, value: object) -> int:
+    def _missing_(cls, value: object) -> "ActionReason":
         if isinstance(value, int):
-            # For integer values, return a custom object
             logger.warning("ActionReason %i is unknown!", value)
-            return 0
+            return cls.REASON_NA
         else:
             # For non-integer values, raise a ValueError
             raise ValueError(f"{value} is not a valid {cls.__name__}")
