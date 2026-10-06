@@ -1,7 +1,28 @@
 WittyPi 4
 ---
 
-This repository holds implementations for alternative WittyPi 4 usage with modern linux distributions.
+[![Test](https://github.com/trackIT-Systems/wittypi4/actions/workflows/test.yml/badge.svg)](https://github.com/trackIT-Systems/wittypi4/actions/workflows/test.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/trackIT-Systems/wittypi4/badges/coverage.json)](https://github.com/trackIT-Systems/wittypi4/actions/workflows/coverage-badge.yml)
+[![Release](https://img.shields.io/github/v/release/trackIT-Systems/wittypi4)](https://github.com/trackIT-Systems/wittypi4/releases/latest)
+
+This repository holds implementations for alternative WittyPi 4 usage with modern linux distributions: a kernel driver and device tree overlay for the RTC, shutdown and SYSUP, and a Python library with the schedule daemon `wittypid`. Changes are listed in the [changelog](CHANGELOG.md).
+
+# Installation from a release
+
+Each [release](https://github.com/trackIT-Systems/wittypi4/releases/latest) contains:
+
+- `rtc-pcf85063-wittypi4-modules.tar.gz`: the kernel modules for the Raspberry Pi 6.18 kernels (`rpi-v8`, `rpi-2712`, `rpi-v8-rt`) and the overlay, laid out like the target filesystem
+- the Python package (wheel and sdist)
+- `SHA256SUMS`
+
+```bash
+sudo tar -C / -xzf rtc-pcf85063-wittypi4-modules.tar.gz
+sudo depmod -a
+sudo tee -a /boot/firmware/config.txt <<<dtoverlay=wittypi4
+pip install wittypi4-*.whl
+```
+
+The modules are only built for kernels released before the tag; for others, build them with DKMS as described below.
 
 # Basic usage
 
@@ -41,6 +62,7 @@ This repository does **not** fork `rtc-pcf85063`. Module `rtc-pcf85063-wittypi4`
 `CONFIG_RTC_DRV_PCF85063` (module `rtc-pcf85063`) must be enabled. The overlay does not wire an RTC IRQ, so kernel alarms stay off (the MCU uses the alarm itself).
 
 The overlay compatible list is `"uugear,wittypi4-rtc-proxy", "nxp,pcf85063wp"` so existing `nxp,pcf85063wp` nodes still bind.
+
 ### Compile & Install module
 
 The module can either be compiled using the Makefile, i.e. `make; sudo make install` or via dkms:
@@ -71,9 +93,9 @@ Remove any `dtoverlay=gpio-shutdown,gpio_pin=4,...` and `dtoverlay=gpio-led,gpio
 
 ### TxD power cut
 
-WittyPi recogices a the Raspberry Pi's shutdown by monitoring the TxD output. This mostly works reliable, but sometimes leads to a hangup where the Raspberry Pi shutdown, but TxD is still high and power is not cut. 
+WittyPi recognizes the Raspberry Pi's shutdown by monitoring the TxD output. This mostly works reliably, but sometimes leads to a hangup where the Raspberry Pi has shut down, but TxD is still high and power is not cut.
 
-To make this more reliable a systemd service can be created, that forcefully sets GPIO 14 low (and thereby disables TxD / the serial console). An example service is to be found in `[/etc/wittypid-power.service](/etc/wittypid-power.service)`.
+To make this more reliable a systemd service can be created, that forcefully sets GPIO 14 low (and thereby disables TxD / the serial console). An example service is to be found in [etc/wittypid-power.service](etc/wittypid-power.service).
 
 # Python API
 
@@ -126,7 +148,20 @@ wittypid -s /path/to/schedule.yml
 wittypid -vv
 ```
 
-For production use, install as a systemd service (see `etc/wittypid-power.service`).
+For production use, run it as a systemd service, together with [etc/wittypid-power.service](etc/wittypid-power.service) (see [TxD power cut](#txd-power-cut)).
+
+## Development
+
+Run the tests with coverage:
+
+```bash
+pip install --group dev -e .
+pytest --cov=wittypi4 --cov-report=term-missing
+```
+
+The tests run without hardware: an in-memory I2C bus and a model of the Witty Pi firmware's alarm handling stand in for the board. CI runs them on Python 3.11 to 3.14 for every push.
+
+To release, add a section for the version to [CHANGELOG.md](CHANGELOG.md) and push a tag (`0.3.0`, or `0.3.0-rc1` for a prerelease). The tag's changelog section becomes the release notes.
 
 ## Documentation
 

@@ -1,0 +1,52 @@
+# Measure test coverage on main and publish it as a shields.io endpoint JSON
+# to the badges branch, which the coverage badge in the README reads
+
+name: Coverage badge
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.x"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install --group dev -e .
+    - name: Test with coverage
+      run: |
+        pytest --cov=wittypi4 --cov-report=json:coverage.json
+    - name: Write badge
+      run: |
+        python - <<'PY'
+        import json
+
+        percent = json.load(open("coverage.json"))["totals"]["percent_covered"]
+        color = "brightgreen" if percent >= 90 else "yellow" if percent >= 75 else "red"
+        badge = {"schemaVersion": 1, "label": "coverage", "message": f"{percent:.0f}%", "color": color}
+        json.dump(badge, open("coverage-badge.json", "w"))
+        print(badge)
+        PY
+    - name: Publish to badges branch
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        dir=$(mktemp -d)
+        cp coverage-badge.json "$dir/coverage.json"
+        cd "$dir"
+        git init -q -b badges
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add coverage.json
+        git commit -q -m "Coverage badge for $GITHUB_SHA"
+        git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges
