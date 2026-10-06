@@ -301,10 +301,12 @@ class ButtonEntry(ScheduleEntry):
 
         self.button_delay = button_delay
         self._tz = tz
+        # computed once: recomputing drifts with the clocks and can keep next_shutdown() from converging
+        self._boot_ts = datetime.datetime.now(tz=tz) - datetime.timedelta(seconds=time.monotonic())
 
     @property
     def boot_ts(self):
-        return datetime.datetime.now(tz=self._tz) - datetime.timedelta(seconds=time.monotonic())
+        return self._boot_ts
 
     def prev_start(self, now: datetime.datetime | None = None) -> datetime.datetime:
         return self.boot_ts
