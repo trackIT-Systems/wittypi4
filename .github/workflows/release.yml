@@ -13,6 +13,9 @@ env:
   KERNEL_SERIES: "6.18"
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   build:
     runs-on: ubuntu-24.04-arm
     # Same Debian release (and gcc) the Raspberry Pi kernels are built with.
@@ -74,7 +77,7 @@ jobs:
 
   release:
     runs-on: ubuntu-24.04-arm
-    needs: [build, overlay, python]
+    needs: [test, build, overlay, python]
     steps:
       - name: Download modules
         uses: actions/download-artifact@v8
