@@ -34,6 +34,24 @@ jobs:
           path: out/
           if-no-files-found: error
 
+  overlay:
+    runs-on: ubuntu-24.04-arm
+    container: debian:trixie
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Shipped with the modules: the driver creates the overlay's shutdown key and SYSUP LED.
+      - name: Build overlay
+        run: bash .github/build-overlay.sh out
+
+      - name: Upload overlay
+        uses: actions/upload-artifact@v7
+        with:
+          name: overlay
+          path: out/
+          if-no-files-found: error
+
   python:
     runs-on: ubuntu-24.04-arm
     steps:
@@ -56,7 +74,7 @@ jobs:
 
   release:
     runs-on: ubuntu-24.04-arm
-    needs: [build, python]
+    needs: [build, overlay, python]
     steps:
       - name: Download modules
         uses: actions/download-artifact@v8
@@ -64,6 +82,12 @@ jobs:
           pattern: modules-*
           path: out
           merge-multiple: true
+
+      - name: Download overlay
+        uses: actions/download-artifact@v8
+        with:
+          name: overlay
+          path: out
 
       - name: Download Python package
         uses: actions/download-artifact@v8
@@ -75,7 +99,7 @@ jobs:
       # "+", which GitHub rewrites in release asset names.
       - name: Package modules
         run: |
-          tar -C out -czf rtc-pcf85063-wittypi4-modules.tar.gz lib
+          tar -C out -czf rtc-pcf85063-wittypi4-modules.tar.gz lib boot
           sha256sum rtc-pcf85063-wittypi4-modules.tar.gz dist/* | sed 's|dist/||' > SHA256SUMS
           {
             echo "### Kernels"

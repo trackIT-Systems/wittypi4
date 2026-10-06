@@ -65,6 +65,8 @@ sudo cp wittypi4.dtbo /boot/firmware/overlays/
 sudo tee -a /boot/firmware/config.txt <<<dtoverlay=wittypi4
 ```
 
+Releases ship a prebuilt `boot/firmware/overlays/wittypi4.dtbo` in `rtc-pcf85063-wittypi4-modules.tar.gz`, next to the matching modules.
+
 Remove any `dtoverlay=gpio-shutdown,gpio_pin=4,...` and `dtoverlay=gpio-led,gpio=17,...` lines, as they would claim the same pins.
 
 ### TxD power cut
