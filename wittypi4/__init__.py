@@ -440,8 +440,11 @@ class ScheduleConfiguration:
             for entry_raw in config["schedule"]:
                 try:
                     entry = ScheduleEntry(**entry_raw, location=self._location, tz=self._tz)
+                    # relative times only fail once evaluated
+                    entry.next_start()
+                    entry.next_stop()
                     self.entries.append(entry)
-                except AttributeError:
+                except (AssertionError, AttributeError):
                     logger.warning("Schedule doesn't contain lat/lon information, ignoring %s", entry_raw)
             if not self.entries:
                 logger.warning("No schedules found, setting force_on.")
