@@ -17,3 +17,9 @@ packages = ["wittypi4"]
 
 [project.scripts]
 wittypid = "wittypi4.wittypid:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-cov",
+]

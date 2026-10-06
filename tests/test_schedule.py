@@ -10,7 +10,7 @@ import zoneinfo
 
 import pytest
 
-from wittypi4 import ScheduleConfiguration
+from wittypi4 import ButtonEntry, ScheduleConfiguration
 
 UTC = datetime.UTC
 BERLIN = zoneinfo.ZoneInfo("Europe/Berlin")
@@ -87,3 +87,92 @@ def test_default_timezone_follows_dst(monkeypatch, now, startup):
     assert sc.next_startup(now) == startup
     assert sc.next_shutdown(startup) == startup + datetime.timedelta(hours=1)
 
+
+
+# Configuration edge cases
+
+
+@pytest.mark.parametrize("config", [{}, {"schedule": []}, {"schedule": None}], ids=["missing", "empty", "null"])
+def test_no_schedule_forces_on(config):
+    sc = ScheduleConfiguration(config, tz=BERLIN)
+    now = local(BERLIN, 9, 12, 0)
+
+    assert sc.force_on
+    assert sc.active(now)
+    assert sc.next_shutdown(now) is None
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("00:10", datetime.timedelta(minutes=10)), ("01:30", datetime.timedelta(minutes=90)), ("soon", None), (None, None)],
+)
+def test_button_delay(value, expected):
+    sc = ScheduleConfiguration({"button_delay": value, "schedule": CONFIG["schedule"]}, tz=BERLIN)
+    assert sc.button_delay == expected
+
+
+def test_sun_relative_without_location(monkeypatch):
+    monkeypatch.setattr("wittypi4._parse_geolocation_file", lambda: None)
+    config = {"schedule": [{"name": "dawn", "start": "sunrise-01:00", "stop": "sunrise+01:00"},
+                           {"name": "noon", "start": "12:00", "stop": "13:00"}]}
+
+    sc = ScheduleConfiguration(config, tz=BERLIN)
+
+    assert [e.name for e in sc.entries] == ["noon"]
+    assert sc.next_startup(local(BERLIN, 9, 6, 0)) == local(BERLIN, 9, 12, 0)
+
+
+def test_location_from_geolocation_file(monkeypatch):
+    monkeypatch.setattr("wittypi4._parse_geolocation_file", lambda: (54.09, 8.97))
+    sc = ScheduleConfiguration({"schedule": [{"name": "dawn", "start": "sunrise+00:00", "stop": "sunrise+01:00"}]}, tz=BERLIN)
+
+    sunrise = sc.next_startup(local(BERLIN, 9, 0, 0))
+    assert local(BERLIN, 9, 7, 0) < sunrise < local(BERLIN, 9, 10, 0)
+
+
+def test_always_on_has_no_shutdown():
+    sc = ScheduleConfiguration({"schedule": [{"name": "always", "start": "00:00", "stop": "24:00"}]}, tz=BERLIN)
+    assert sc.next_shutdown(local(BERLIN, 9, 12, 0)) is None
+
+
+def test_adjacent_entries_merge():
+    config = {"schedule": [{"name": "a", "start": "10:00", "stop": "11:00"},
+                           {"name": "b", "start": "11:00", "stop": "12:00"}]}
+    sc = ScheduleConfiguration(config, tz=BERLIN)
+
+    assert sc.next_shutdown(local(BERLIN, 9, 10, 30)) == local(BERLIN, 9, 12, 0)
+
+
+def test_overlapping_entries_merge():
+    config = {"schedule": [{"name": "a", "start": "10:00", "stop": "11:30"},
+                           {"name": "b", "start": "11:00", "stop": "12:00"}]}
+    sc = ScheduleConfiguration(config, tz=BERLIN)
+
+    assert sc.next_shutdown(local(BERLIN, 9, 10, 30)) == local(BERLIN, 9, 12, 0)
+
+
+# Manual power-on
+
+
+@pytest.mark.parametrize(
+    ("uptime_s", "delay", "active"),
+    [(60, datetime.timedelta(minutes=10), True), (3600, datetime.timedelta(minutes=10), False), (60, None, False)],
+    ids=["within-delay", "after-delay", "no-delay"],
+)
+def test_button_entry(monkeypatch, uptime_s, delay, active):
+    monkeypatch.setattr("wittypi4.time.monotonic", lambda: uptime_s)
+    entry = ButtonEntry(delay, tz=BERLIN)
+
+    assert entry.active() is active
+    assert entry.next_start() is None
+
+
+def test_button_entry_keeps_system_on(monkeypatch):
+    monkeypatch.setattr("wittypi4.time.monotonic", lambda: 60)
+    sc = ScheduleConfiguration({"schedule": [{"name": "noon", "start": "12:00", "stop": "13:00"}]}, tz=BERLIN)
+    now = datetime.datetime.now(BERLIN)
+    sc.entries.append(ButtonEntry(datetime.timedelta(minutes=10), tz=BERLIN))
+
+    assert sc.active(now)
+    shutdown = sc.next_shutdown(now)
+    assert shutdown is not None and now < shutdown <= now + datetime.timedelta(hours=24)
