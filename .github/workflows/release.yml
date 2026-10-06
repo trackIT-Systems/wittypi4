@@ -28,38 +28,65 @@ jobs:
         run: bash .github/build-modules.sh ${{ matrix.flavor }} ${{ env.KERNEL_SERIES }} out
 
       - name: Upload modules
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: modules-${{ matrix.flavor }}
           path: out/
           if-no-files-found: error
 
+  python:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # The release tag is the package version; pip normalizes it (0.2.0-rc1 -> 0.2.0rc1).
+      - name: Set version from tag
+        run: sed -i "s/^version = .*/version = \"${GITHUB_REF_NAME}\"/" pyproject.toml
+
+      - name: Build sdist and wheel
+        run: pipx run build --outdir dist .
+
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-package
+          path: dist/
+          if-no-files-found: error
+
   release:
     runs-on: ubuntu-24.04-arm
-    needs: build
+    needs: [build, python]
     steps:
       - name: Download modules
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: modules-*
           path: out
           merge-multiple: true
+
+      - name: Download Python package
+        uses: actions/download-artifact@v8
+        with:
+          name: python-package
+          path: dist
 
       # One tarball laid out like the target filesystem: kernel versions contain
       # "+", which GitHub rewrites in release asset names.
       - name: Package modules
         run: |
           tar -C out -czf rtc-pcf85063-wittypi4-modules.tar.gz lib
-          sha256sum rtc-pcf85063-wittypi4-modules.tar.gz > SHA256SUMS
+          sha256sum rtc-pcf85063-wittypi4-modules.tar.gz dist/* | sed 's|dist/||' > SHA256SUMS
           {
             echo "### Kernels"
             find out/lib/modules -mindepth 1 -maxdepth 1 -printf '- %f\n' | sort -V
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create draft release
+      - name: Create prerelease
         uses: softprops/action-gh-release@v3
         with:
-          draft: true
+          prerelease: true
           files: |
             rtc-pcf85063-wittypi4-modules.tar.gz
+            dist/*
             SHA256SUMS
