@@ -79,6 +79,15 @@ jobs:
     runs-on: ubuntu-24.04-arm
     needs: [test, build, overlay, python]
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # The tag's CHANGELOG.md section, plus its link definitions for references like [#9].
+      - name: Extract release notes
+        run: |
+          awk -v h="## [$GITHUB_REF_NAME]" 'index($0, h) == 1 {f = 1; next} /^## \[/ {f = 0} f' CHANGELOG.md > release-notes.md
+          grep '^\[.*\]: ' CHANGELOG.md >> release-notes.md
+
       - name: Download modules
         uses: actions/download-artifact@v8
         with:
@@ -114,6 +123,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           prerelease: ${{ contains(github.ref_name, '-') }}
+          body_path: release-notes.md
           files: |
             rtc-pcf85063-wittypi4-modules.tar.gz
             dist/*

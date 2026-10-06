@@ -37,6 +37,7 @@ Raspberry Pi kernel series they were built for and predate versioning.
 - Releases are built in CI and contain:
   - a tarball with the kernel modules for every Raspberry Pi 6.18 kernel (`rpi-v8`, `rpi-2712`, `rpi-v8-rt`) and the overlay as `boot/firmware/overlays/wittypi4.dtbo`, checked against the Raspberry Pi 3 and 4 device trees
   - the Python sdist and wheel, versioned from the tag
+  - release notes from this changelog
 - Tests for the hardware class, schedule edge cases and the daemon, including a two-day simulation of `wittypid` and the firmware's alarm handling
 - CI runs the tests on Python 3.11 to 3.14 for every push; releases require them to pass
 
