@@ -9,22 +9,19 @@ The basic workflow followed by the WittyPi is described in the figure cited from
 
 ![WittyPi basic workflow, as seen in UUGear's user manual, Chapter 4.](img/wittypi_workflow.jpg)
 
-To enable turning the Raspberry Pi on and shutting it down gracefully, one can make use of existing dtoverlays, described in `/boot/firmware/overlays/README`:
+The overlay [wittypi4-overlay.dts](./wittypi4-overlay.dts) integrates the WittyPi with the system in one `dtoverlay=wittypi4` (see [Device Tree Overlay](#device-tree-overlay--raspberry-pi)):
 
-```
-Name:   gpio-shutdown
-Info:   Initiates a shutdown when GPIO pin changes. The given GPIO pin
-        is configured as an input key that generates KEY_POWER events.
-...
-Name:   gpio-led
-Info:   This is a generic overlay for activating LEDs (or any other component)
-        by a GPIO pin.
-```
+- **Shutdown**: the MCU pulls GPIO4 low on a button click or shutdown alarm. GPIO4 is an input with pull-up and generates `KEY_POWER` (like the stock `gpio-shutdown` overlay). Debouncing is disabled, as the pulse can be < 1ms.
+- **SYSUP**: GPIO17 signals the MCU that the system is up, as LED `sysup` (like the stock `gpio-led` overlay).
+- **RTC**: the PCF85063 behind the MCU, see below. The overlay also enables the ARM I2C bus.
 
-WittyPi uses inverted logic for the shutdown button, i.e. `active_high`. Also the virtual button press is quite short (can be < 1ms), hence debouncing shoud be disabled. Using the following entries in `/boot/firmware/config.txt`, sysup and shutdown is made available:
+Shutdown and SYSUP are only set up once the driver `rtc-pcf85063-wittypi4` found the WittyPi (firmware id `0x26` at `0x08`). The overlay can therefore be enabled on systems without the board; GPIO4 and GPIO17 then stay untouched.
+
+It replaces the previous combination of three overlays:
 
 ```ini
-dtoverlay=gpio-shutdown,gpio_pin=4,debounce=0,active_low=0
+dtoverlay=wittypi4
+dtoverlay=gpio-shutdown,gpio_pin=4,debounce=0,gpio_pull=up,active_low=1
 dtoverlay=gpio-led,gpio=17,label=sysup,trigger=heartbeat
 ```
 
@@ -57,25 +54,18 @@ sudo dkms install rtc-pcf85063-wittypi4/1.0
 
 ### Device Tree Overlay / Raspberry Pi
 
-To load the driver and make the RTC accessible to the Raspberry Pi a device tree overlay can be used ([wittypi4-overlay.dts](./wittypi4-overlay.dts)). To use this overlay it needs to be compiled and loaded:
+The overlay ([wittypi4-overlay.dts](./wittypi4-overlay.dts)) loads the RTC driver and sets up shutdown and SYSUP. Compile it, copy it to the overlay folder and enable it in `config.txt`:
 
 ```bash
-# compile to dtbo 
+# compile to dtbo
 dtc -O dtb -o wittypi4.dtbo wittypi4-overlay.dts
-# create overlay location
-sudo mkdir -p /sys/kernel/config/device-tree/overlays/wittypi4
-# copy dtbo to kernel interface
-sudo cp wittypi4.dtbo /sys/kernel/config/device-tree/overlays/wittypi4/dtbo
-```
-
-Of course the dtbo can also be loaded using an `config.txt` entry inside, when copying the dtbo to the respective location:
-
-```bash
 # copy dtbo to overlay folder
 sudo cp wittypi4.dtbo /boot/firmware/overlays/
 # append dtoverlay to config.txt
 sudo tee -a /boot/firmware/config.txt <<<dtoverlay=wittypi4
 ```
+
+Remove any `dtoverlay=gpio-shutdown,gpio_pin=4,...` and `dtoverlay=gpio-led,gpio=17,...` lines, as they would claim the same pins.
 
 ### TxD power cut
 

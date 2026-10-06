@@ -5,14 +5,21 @@
  * The MCU at 0x08 exposes the RTC at register base 0x36 and does not
  * support bulk I2C transfers. This driver presents a nested adapter
  * the in-tree rtc-pcf85063 driver can bind to.
+ *
+ * Child nodes in the device tree (shutdown key, SYSUP LED) are only
+ * populated once the MCU answered with the Witty Pi 4 firmware id, so the
+ * overlay can be enabled on systems without the board.
  */
 #include <linux/delay.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/slab.h>
 #include <linux/version.h>
 
+#define WITTYPI_REG_FIRMWARE_ID	0x00
+#define WITTYPI_FIRMWARE_ID	0x26
 #define WITTYPI_RTC_REG_BASE	0x36
 #define WITTYPI_RTC_VIRT_ADDR	0x51
 #define WITTYPI_XFER_RETRIES	3
@@ -198,7 +205,19 @@ static int wittypi_rtc_proxy_probe(struct i2c_client *client)
 		.type = "pcf85063a",
 		.addr = WITTYPI_RTC_VIRT_ADDR,
 	};
+	u8 id;
 	int err;
+
+	err = wittypi_parent_read_byte(client, WITTYPI_REG_FIRMWARE_ID, &id);
+	if (err) {
+		dev_info(&client->dev, "no Witty Pi 4 found: %d\n", err);
+		return -ENODEV;
+	}
+	if (id != WITTYPI_FIRMWARE_ID) {
+		dev_err(&client->dev, "unknown firmware id 0x%02x (expected 0x%02x)\n",
+			id, WITTYPI_FIRMWARE_ID);
+		return -ENODEV;
+	}
 
 	priv = devm_kzalloc(&client->dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -234,6 +253,16 @@ static int wittypi_rtc_proxy_probe(struct i2c_client *client)
 			"in-tree rtc-pcf85063 did not bind; enable CONFIG_RTC_DRV_PCF85063\n");
 		err = -ENODEV;
 		goto err_unregister_rtc;
+	}
+
+	/* without an of_node, of_platform_populate() would walk the whole tree */
+	if (client->dev.of_node) {
+		err = devm_of_platform_populate(&client->dev);
+		if (err) {
+			dev_err(&client->dev, "failed to populate child nodes: %d\n",
+				err);
+			goto err_unregister_rtc;
+		}
 	}
 
 	return 0;

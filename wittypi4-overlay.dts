@@ -1,6 +1,21 @@
 /*
  * Device Tree overlay for Witty Pi 4 extension board by UUGear
  *
+ * Replaces the combination of
+ *   dtoverlay=gpio-shutdown,gpio_pin=4,debounce=0,gpio_pull=up,active_low=1
+ *   dtoverlay=gpio-led,gpio=17,label=sysup,trigger=heartbeat
+ * plus the RTC, so config.txt only needs
+ *   dtoverlay=wittypi4
+ *
+ * - RTC: PCF85063 behind the MCU at 0x08 (needs module rtc-pcf85063-wittypi4)
+ * - Shutdown: the MCU pulls GPIO4 low on button click or shutdown alarm,
+ *   reported as KEY_POWER
+ * - SYSUP: GPIO17 tells the MCU that the system is up; the heartbeat trigger
+ *   happens to match the expected pulse pattern
+ *
+ * Shutdown and SYSUP are children of the RTC node: rtc-pcf85063-wittypi4
+ * creates them only after the MCU answered with the Witty Pi 4 firmware id.
+ * Without the board, GPIO4 and GPIO17 stay untouched.
  */
 
 /dts-v1/;
@@ -10,14 +25,58 @@
 	compatible = "brcm,bcm2835";
 
 	fragment@0 {
-		target = <&i2c1>;
+		target = <&gpio>;
+		__overlay__ {
+			/* only applied when the devices below probe */
+			wittypi4_halt_pins: wittypi4_halt_pins {
+				brcm,pins = <4>;
+				brcm,function = <0>; /* input */
+				brcm,pull = <2>; /* pull up */
+			};
+
+			wittypi4_sysup_pins: wittypi4_sysup_pins {
+				brcm,pins = <17>;
+				brcm,function = <1>; /* output */
+				brcm,pull = <0>; /* none */
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&i2c_arm>;
 		__overlay__ {
 			#address-cells = <1>;
 			#size-cells = <0>;
+			status = "okay";
 
 			rtc@8 {
 				compatible = "uugear,wittypi4-rtc-proxy", "nxp,pcf85063wp";
 				reg = <0x08>;
+
+				shutdown {
+					compatible = "gpio-keys";
+					pinctrl-names = "default";
+					pinctrl-0 = <&wittypi4_halt_pins>;
+
+					shutdown {
+						label = "shutdown";
+						linux,code = <116>; /* KEY_POWER */
+						gpios = <&gpio 4 1>; /* active low */
+						debounce-interval = <0>; /* MCU pulse can be < 1ms */
+					};
+				};
+
+				leds {
+					compatible = "gpio-leds";
+					pinctrl-names = "default";
+					pinctrl-0 = <&wittypi4_sysup_pins>;
+
+					sysup {
+						label = "sysup";
+						gpios = <&gpio 17 0>;
+						linux,default-trigger = "heartbeat";
+					};
+				};
 			};
 		};
 	};
